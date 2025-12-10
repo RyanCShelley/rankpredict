@@ -161,6 +161,27 @@ export const authAPI = {
   getMe: async () => {
     const response = await api.get('/api/auth/me');
     return response.data;
+  },
+
+  // Admin user management
+  getUsers: async () => {
+    const response = await api.get('/api/auth/users');
+    return response.data;
+  },
+
+  createUser: async (userData) => {
+    const response = await api.post('/api/auth/users', userData);
+    return response.data;
+  },
+
+  updateUser: async (userId, updates) => {
+    const response = await api.put(`/api/auth/users/${userId}`, updates);
+    return response.data;
+  },
+
+  deleteUser: async (userId) => {
+    const response = await api.delete(`/api/auth/users/${userId}`);
+    return response.data;
   }
 };
 
