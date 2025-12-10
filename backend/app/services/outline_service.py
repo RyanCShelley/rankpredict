@@ -202,6 +202,24 @@ class OutlineService:
 
         prompt = f"""You are a senior SEO content strategist. Analyze the following SERP data and create a comprehensive content brief that will help the content rank in the top 10.
 
+## IMPORTANT: SERVICE SCOPE CONSTRAINTS
+All recommendations MUST be limited to services we actually provide. DO NOT recommend:
+- Video creation or video marketing
+- Link building or backlink acquisition
+- Social media marketing
+- Paid advertising (PPC, display ads)
+- Influencer outreach
+- Guest posting
+
+ONLY recommend actions within these service areas:
+- On-Page SEO (title tags, meta descriptions, header structure, keyword optimization)
+- Technical SEO (site speed, schema markup, crawlability, mobile optimization)
+- Content Strategy (new content, content updates, content gaps, topic clusters)
+- Semantic Search Optimization (entity coverage, topical authority, NLP optimization)
+- Local SEO / Local Listings (Google Business Profile, local citations)
+- Digital PR (press releases, news coverage, brand mentions)
+- Data Analysis (analytics, reporting, competitor analysis)
+
 {serp_context}
 
 ## Intent Analysis
@@ -532,6 +550,24 @@ Return ONLY valid JSON, no markdown code blocks or other formatting."""
         page_text = existing_content.get("page_text", "")[:5000]
 
         prompt = f"""You are a senior SEO content strategist. Analyze this EXISTING content and create a detailed optimization plan to improve rankings.
+
+## IMPORTANT: SERVICE SCOPE CONSTRAINTS
+All recommendations MUST be limited to services we actually provide. DO NOT recommend:
+- Video creation or video marketing
+- Link building or backlink acquisition
+- Social media marketing
+- Paid advertising (PPC, display ads)
+- Influencer outreach
+- Guest posting
+
+ONLY recommend actions within these service areas:
+- On-Page SEO (title tags, meta descriptions, header structure, keyword optimization)
+- Technical SEO (site speed, schema markup, crawlability, mobile optimization)
+- Content Strategy (new content, content updates, content gaps, topic clusters)
+- Semantic Search Optimization (entity coverage, topical authority, NLP optimization)
+- Local SEO / Local Listings (Google Business Profile, local citations)
+- Digital PR (press releases, news coverage, brand mentions)
+- Data Analysis (analytics, reporting, competitor analysis)
 
 {serp_context}
 
