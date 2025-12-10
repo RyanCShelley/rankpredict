@@ -30,7 +30,7 @@ def get_projects(db: Session = Depends(get_db)):
             "name": l.name,
             "target_domain_url": l.target_domain_url,
             "keyword_count": len(l.keywords),
-            "scored_count": sum(1 for k in l.keywords if k.scored_at is not None)
+            "selected_count": sum(1 for k in l.keywords if k.is_selected)
         }
         for l in lists
     ]
@@ -43,17 +43,17 @@ def get_keywords(
 ):
     """
     Get keywords for outline builder.
-    If list_id is provided, returns all scored keywords from that list.
-    Otherwise returns all selected keywords across all lists.
+    Only returns keywords that are SELECTED (approved) in the Strategy Dashboard.
+    If list_id is provided, filters to that specific project.
     """
     if list_id:
-        # Get all scored keywords from specific list
+        # Get selected keywords from specific list
         keywords = db.query(Keyword).filter(
             Keyword.keyword_list_id == list_id,
-            Keyword.scored_at.isnot(None)  # Only scored keywords
+            Keyword.is_selected == True  # Only approved keywords
         ).order_by(Keyword.rankability_score.desc()).all()
     else:
-        # Legacy behavior: get selected keywords across all lists
+        # Get all selected keywords across all lists
         keywords = db.query(Keyword).filter(
             Keyword.is_selected == True
         ).order_by(Keyword.rankability_score.desc()).all()

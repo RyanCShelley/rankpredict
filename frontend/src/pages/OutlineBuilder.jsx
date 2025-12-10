@@ -213,7 +213,7 @@ const OutlineBuilder = () => {
                 <option value="">Select a project...</option>
                 {projects.map(p => (
                   <option key={p.id} value={p.id}>
-                    {p.name} ({p.scored_count}/{p.keyword_count} scored)
+                    {p.name} ({p.selected_count}/{p.keyword_count} approved)
                   </option>
                 ))}
               </select>
@@ -237,7 +237,7 @@ const OutlineBuilder = () => {
               </select>
               {selectedProjectId && keywords.length === 0 && (
                 <p className="text-sm text-orange-600 mt-1">
-                  No scored keywords in this project. Score keywords first in Strategy Dashboard.
+                  No approved keywords in this project. Approve keywords in Strategy Dashboard first.
                 </p>
               )}
             </div>

@@ -190,8 +190,8 @@ const StrategyDashboard = () => {
 
     const hasClientProfile = selectedList.client_profile;
     const headers = hasClientProfile
-      ? ['Keyword', 'Win Score', 'Tier', 'Domain Fit', 'Intent Fit', 'Client Forecast', 'Forecast Tier', 'Keep']
-      : ['Keyword', 'Rankability Score', 'Tier', 'Keep'];
+      ? ['Keyword', 'Win Score', 'Tier', 'Domain Fit', 'Intent Fit', 'Client Forecast', 'Forecast Tier', 'Approved']
+      : ['Keyword', 'Rankability Score', 'Tier', 'Approved'];
 
     const csv = [
       headers.join(','),
@@ -528,7 +528,7 @@ const StrategyDashboard = () => {
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Forecast</th>
                         </>
                       )}
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Keep</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Approved</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Remove</th>
                     </tr>
                   </thead>
@@ -634,7 +634,7 @@ const StrategyDashboard = () => {
                               checked={keyword.is_selected}
                               onChange={(e) => handleUpdateKeyword(keyword.id, { is_selected: e.target.checked })}
                               className="h-4 w-4"
-                              title="Keep this keyword (available in content builder)"
+                              title="Approve this keyword for content builder"
                             />
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
