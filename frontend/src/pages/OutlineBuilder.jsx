@@ -445,10 +445,22 @@ const OutlineBuilder = () => {
           {/* Header Section */}
           <div className="bg-white rounded-lg shadow p-6">
             <div className="mb-4">
+              {outline.optimization_mode && (
+                <div className="mb-3 px-3 py-2 bg-orange-100 border border-orange-300 rounded-lg">
+                  <p className="text-sm font-medium text-orange-800">
+                    Optimization Brief for Existing Content
+                  </p>
+                  {outline.existing_url && (
+                    <a href={outline.existing_url} target="_blank" rel="noopener noreferrer" className="text-xs text-orange-600 hover:underline break-all">
+                      {outline.existing_url}
+                    </a>
+                  )}
+                </div>
+              )}
               <h2 className="text-2xl font-bold text-[#223540]">{outline.keyword}</h2>
               <div className="mt-2 flex flex-wrap gap-2">
                 <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded text-sm">
-                  {outline.intent_analysis?.intent_type || 'Informational'}
+                  {outline.optimization_mode ? 'Optimization' : (outline.intent_analysis?.intent_type || 'Informational')}
                 </span>
                 <span className="px-3 py-1 bg-gray-100 text-gray-800 rounded text-sm">
                   {outline.structure_type || 'Article'}
@@ -544,19 +556,62 @@ const OutlineBuilder = () => {
             <div className="bg-white rounded-lg shadow p-6">
               <h3 className="text-lg font-semibold mb-4">Content Strategy</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="p-4 bg-gray-50 rounded-lg">
-                  <p className="text-sm text-gray-600">Target Word Count</p>
-                  <p className="text-2xl font-bold text-[#223540]">
-                    {outline.content_strategy.target_word_count?.toLocaleString() || outline.word_count_target?.toLocaleString()}
-                  </p>
-                  {outline.content_strategy.min_word_count && (
-                    <p className="text-xs text-gray-500">Min: {outline.content_strategy.min_word_count.toLocaleString()}</p>
+                {/* Word Count - Show comparison for existing content */}
+                <div className={`p-4 rounded-lg ${outline.optimization_mode ? 'bg-blue-50 border border-blue-200' : 'bg-gray-50'}`}>
+                  <p className="text-sm text-gray-600">Word Count</p>
+                  {outline.optimization_mode && outline.content_strategy.word_count_current ? (
+                    <>
+                      <div className="flex items-baseline gap-2">
+                        <p className="text-lg font-bold text-gray-500">{outline.content_strategy.word_count_current?.toLocaleString()}</p>
+                        <span className="text-gray-400">→</span>
+                        <p className="text-2xl font-bold text-[#223540]">{outline.content_strategy.word_count_target?.toLocaleString()}</p>
+                      </div>
+                      <p className={`text-xs font-medium mt-1 ${
+                        outline.content_strategy.word_count_action === 'INCREASE' ? 'text-red-600' :
+                        outline.content_strategy.word_count_action === 'DECREASE' ? 'text-orange-600' :
+                        'text-green-600'
+                      }`}>
+                        {outline.content_strategy.word_count_action === 'INCREASE' && `+${outline.content_strategy.word_count_delta?.toLocaleString() || (outline.content_strategy.word_count_target - outline.content_strategy.word_count_current).toLocaleString()} words needed`}
+                        {outline.content_strategy.word_count_action === 'DECREASE' && `Consider trimming ${Math.abs(outline.content_strategy.word_count_delta || 0).toLocaleString()} words`}
+                        {outline.content_strategy.word_count_action === 'MAINTAIN' && 'Word count is competitive'}
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-2xl font-bold text-[#223540]">
+                        {outline.content_strategy.target_word_count?.toLocaleString() || outline.word_count_target?.toLocaleString()}
+                      </p>
+                      {outline.content_strategy.min_word_count && (
+                        <p className="text-xs text-gray-500">Min: {outline.content_strategy.min_word_count.toLocaleString()}</p>
+                      )}
+                    </>
                   )}
                 </div>
-                {outline.content_strategy.readability_target && (
-                  <div className="p-4 bg-gray-50 rounded-lg">
-                    <p className="text-sm text-gray-600">Readability Target</p>
-                    <p className="text-lg font-bold text-[#223540]">{outline.content_strategy.readability_target}</p>
+
+                {/* Readability - Show comparison for existing content */}
+                {(outline.content_strategy.readability_target || outline.content_strategy.readability_current) && (
+                  <div className={`p-4 rounded-lg ${outline.optimization_mode ? 'bg-blue-50 border border-blue-200' : 'bg-gray-50'}`}>
+                    <p className="text-sm text-gray-600">Readability (Flesch)</p>
+                    {outline.optimization_mode && outline.content_strategy.readability_current ? (
+                      <>
+                        <div className="flex items-baseline gap-2">
+                          <p className="text-lg font-bold text-gray-500">{outline.content_strategy.readability_current}</p>
+                          <span className="text-gray-400">→</span>
+                          <p className="text-xl font-bold text-[#223540]">{outline.content_strategy.readability_target}</p>
+                        </div>
+                        <p className={`text-xs font-medium mt-1 ${
+                          outline.content_strategy.readability_action === 'SIMPLIFY' ? 'text-red-600' :
+                          outline.content_strategy.readability_action === 'ADD_DEPTH' ? 'text-orange-600' :
+                          'text-green-600'
+                        }`}>
+                          {outline.content_strategy.readability_action === 'SIMPLIFY' && 'Simplify content - use shorter sentences'}
+                          {outline.content_strategy.readability_action === 'ADD_DEPTH' && 'Add more technical depth'}
+                          {outline.content_strategy.readability_action === 'MAINTAIN' && 'Readability is competitive'}
+                        </p>
+                      </>
+                    ) : (
+                      <p className="text-lg font-bold text-[#223540]">{outline.content_strategy.readability_target}</p>
+                    )}
                   </div>
                 )}
                 {outline.content_strategy.schema_types?.length > 0 && (
@@ -582,6 +637,48 @@ const OutlineBuilder = () => {
                   </ul>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Content Annotations - For Existing Content Optimization */}
+          {outline.optimization_mode && outline.content_annotations?.length > 0 && (
+            <div className="bg-white rounded-lg shadow p-6">
+              <h3 className="text-lg font-semibold mb-2 text-red-700">Content Improvements Needed</h3>
+              <p className="text-sm text-gray-600 mb-4">
+                Specific text changes to improve SEO performance. Prioritized by impact.
+              </p>
+              <div className="space-y-4">
+                {outline.content_annotations.map((annotation, idx) => (
+                  <div key={idx} className={`p-4 rounded-lg border-l-4 ${
+                    annotation.priority === 'high' ? 'border-red-500 bg-red-50' :
+                    annotation.priority === 'medium' ? 'border-orange-500 bg-orange-50' :
+                    'border-yellow-500 bg-yellow-50'
+                  }`}>
+                    <div className="flex justify-between items-start mb-2">
+                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                        annotation.priority === 'high' ? 'bg-red-100 text-red-800' :
+                        annotation.priority === 'medium' ? 'bg-orange-100 text-orange-800' :
+                        'bg-yellow-100 text-yellow-800'
+                      }`}>
+                        {annotation.priority?.toUpperCase()} PRIORITY
+                      </span>
+                    </div>
+                    <div className="space-y-2">
+                      <div>
+                        <p className="text-xs font-medium text-gray-500 mb-1">ORIGINAL:</p>
+                        <p className="text-sm text-gray-700 line-through bg-white p-2 rounded">{annotation.original_text}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-medium text-green-700 mb-1">IMPROVED:</p>
+                        <p className="text-sm text-green-800 font-medium bg-green-100 p-2 rounded">{annotation.improved_text}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-600 italic">{annotation.reason}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
@@ -613,13 +710,37 @@ const OutlineBuilder = () => {
 
           {/* Content Outline */}
           <div className="bg-white rounded-lg shadow p-6">
-            <h3 className="text-lg font-semibold mb-4">Content Outline</h3>
+            <h3 className="text-lg font-semibold mb-4">
+              {outline.optimization_mode ? 'Optimized Content Structure' : 'Content Outline'}
+            </h3>
+            {outline.optimization_mode && (
+              <p className="text-sm text-gray-600 mb-4">
+                Sections marked with status indicate what action to take with your existing content.
+              </p>
+            )}
             <div className="space-y-6">
               {outline.sections.map((section, idx) => (
-                <div key={idx} className="border-l-4 border-[#223540] pl-4">
-                  <h4 className="text-lg font-semibold mb-2">
-                    {idx + 1}. {section.heading}
-                  </h4>
+                <div key={idx} className={`border-l-4 pl-4 ${
+                  section.status === 'ADD' ? 'border-green-500 bg-green-50 rounded-r-lg pr-4 py-2' :
+                  section.status === 'REMOVE' ? 'border-red-500 bg-red-50 rounded-r-lg pr-4 py-2' :
+                  section.status === 'MODIFY' ? 'border-orange-500 bg-orange-50 rounded-r-lg pr-4 py-2' :
+                  'border-[#223540]'
+                }`}>
+                  <div className="flex items-start justify-between">
+                    <h4 className="text-lg font-semibold mb-2">
+                      {idx + 1}. {section.heading}
+                    </h4>
+                    {section.status && (
+                      <span className={`px-2 py-1 rounded text-xs font-bold ${
+                        section.status === 'ADD' ? 'bg-green-200 text-green-800' :
+                        section.status === 'REMOVE' ? 'bg-red-200 text-red-800' :
+                        section.status === 'MODIFY' ? 'bg-orange-200 text-orange-800' :
+                        'bg-blue-200 text-blue-800'
+                      }`}>
+                        {section.status}
+                      </span>
+                    )}
+                  </div>
                   {section.semantic_focus && (
                     <p className="text-sm text-gray-600 mb-2 italic">{section.semantic_focus}</p>
                   )}
@@ -745,6 +866,7 @@ const OutlineBuilder = () => {
             {outline.competitive_gaps && (
               <div className="bg-white rounded-lg shadow p-6">
                 <h3 className="text-lg font-semibold mb-4">Competitive Gaps</h3>
+                {/* New content format */}
                 {outline.competitive_gaps.missing_from_competitors?.length > 0 && (
                   <div className="mb-4">
                     <h4 className="font-medium text-gray-700 mb-2">Missing from Competitors</h4>
@@ -766,11 +888,42 @@ const OutlineBuilder = () => {
                   </div>
                 )}
                 {outline.competitive_gaps.comprehensiveness_improvements?.length > 0 && (
-                  <div>
+                  <div className="mb-4">
                     <h4 className="font-medium text-gray-700 mb-2">Comprehensiveness Improvements</h4>
                     <ul className="list-disc list-inside text-sm text-gray-600">
                       {outline.competitive_gaps.comprehensiveness_improvements.map((imp, idx) => (
                         <li key={idx}>{imp}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {/* Optimization mode format */}
+                {outline.competitive_gaps.missing_from_page?.length > 0 && (
+                  <div className="mb-4">
+                    <h4 className="font-medium text-red-700 mb-2">Missing from Your Page</h4>
+                    <ul className="list-disc list-inside text-sm text-gray-600">
+                      {outline.competitive_gaps.missing_from_page.map((gap, idx) => (
+                        <li key={idx}>{gap}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {outline.competitive_gaps.strengths_to_keep?.length > 0 && (
+                  <div className="mb-4">
+                    <h4 className="font-medium text-green-700 mb-2">Strengths to Keep</h4>
+                    <ul className="list-disc list-inside text-sm text-gray-600">
+                      {outline.competitive_gaps.strengths_to_keep.map((strength, idx) => (
+                        <li key={idx}>{strength}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {outline.competitive_gaps.quick_wins?.length > 0 && (
+                  <div>
+                    <h4 className="font-medium text-orange-700 mb-2">Quick Wins</h4>
+                    <ul className="list-disc list-inside text-sm text-gray-600">
+                      {outline.competitive_gaps.quick_wins.map((win, idx) => (
+                        <li key={idx}>{win}</li>
                       ))}
                     </ul>
                   </div>

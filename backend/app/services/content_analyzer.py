@@ -111,7 +111,21 @@ class ContentAnalyzer:
             
             # Extract H2 headings
             h2_headings = [h2.get_text(strip=True) for h2 in soup.find_all("h2")]
-            
+
+            # Extract title
+            title_tag = soup.find("title")
+            page_title = title_tag.get_text(strip=True) if title_tag else ""
+
+            # Extract H1
+            h1_tag = soup.find("h1")
+            h1_text = h1_tag.get_text(strip=True) if h1_tag else ""
+
+            # Extract meta description
+            meta_desc = ""
+            meta_tag = soup.find("meta", attrs={"name": "description"})
+            if meta_tag:
+                meta_desc = meta_tag.get("content", "")
+
             return {
                 "word_count": word_count,
                 "sentence_count": sentence_count,
@@ -123,7 +137,11 @@ class ContentAnalyzer:
                 "semantic_topic_score": semantic_score,
                 "h2_headings": h2_headings,
                 "url": url,
-                "raw_html": html  # Store for OpenAI analysis
+                "raw_html": html,  # Store for OpenAI analysis
+                "page_text": text,  # Clean text for annotation
+                "page_title": page_title,
+                "h1": h1_text,
+                "meta_description": meta_desc
             }
         except Exception as e:
             print(f"Error analyzing content at {url}: {e}")

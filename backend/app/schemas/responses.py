@@ -80,6 +80,16 @@ class OutlineSectionResponse(BaseModel):
     entities: List[str] = []
     semantic_focus: str = ""
     key_points: List[str] = []
+    # For existing content optimization
+    status: Optional[str] = None  # KEEP, MODIFY, ADD, REMOVE
+
+
+class ContentAnnotation(BaseModel):
+    """Content annotation for existing content improvements"""
+    original_text: str
+    improved_text: str
+    reason: str
+    priority: str = "medium"
 
 
 class QuestionToAnswer(BaseModel):
@@ -127,6 +137,10 @@ class OutlineResponse(BaseModel):
     serp_optimization: Optional[Dict[str, Any]] = None
     competitive_gaps: Optional[Dict[str, Any]] = None
     serp_features: Optional[SERPFeaturesResponse] = None
+    # Existing content optimization fields
+    optimization_mode: bool = False
+    existing_url: Optional[str] = None
+    content_annotations: List[ContentAnnotation] = []
 
 
 class ImprovementPlanResponse(BaseModel):

@@ -157,6 +157,22 @@ def generate_outline(
         intent_analysis["intent_type"] = request.target_intent
         intent_analysis["user_override"] = True
 
+    # If existing content mode, analyze the existing content first
+    existing_content_data = None
+    improvement_plan = None
+    if request.content_type == "existing" and request.existing_url:
+        content_analyzer = get_content_analyzer()
+        existing_content_data = content_analyzer.analyze_existing_content(request.existing_url, keyword)
+
+        improvement_plan = content_analyzer.generate_improvement_plan(
+            current_content=existing_content_data,
+            serp_analysis={
+                "medians": serp_medians,
+                "results": enriched_results
+            },
+            keyword=keyword
+        )
+
     # Generate dynamic content brief with SERP features
     try:
         outline_data = outline_service.generate_outline(
@@ -165,7 +181,8 @@ def generate_outline(
             serp_medians=serp_medians,
             intent_analysis=intent_analysis,
             content_type=request.content_type,
-            serp_features=serp_features
+            serp_features=serp_features,
+            existing_content=existing_content_data
         )
     except Exception as e:
         error_detail = str(e)
@@ -175,21 +192,6 @@ def generate_outline(
         raise HTTPException(
             status_code=500,
             detail=error_detail
-        )
-    
-    # If existing content mode, generate improvement plan
-    improvement_plan = None
-    if request.content_type == "existing" and request.existing_url:
-        content_analyzer = get_content_analyzer()
-        current_content = content_analyzer.analyze_existing_content(request.existing_url, keyword)
-        
-        improvement_plan = content_analyzer.generate_improvement_plan(
-            current_content=current_content,
-            serp_analysis={
-                "medians": serp_medians,
-                "results": enriched_results
-            },
-            keyword=keyword
         )
     
     # Build the response first so we can save it
@@ -230,7 +232,7 @@ def generate_outline(
     # Build full brief data as JSON for storage
     brief_data = {
         "keyword": keyword,
-        "intent_analysis": intent_analysis,
+        "intent_analysis": outline_data.get("intent_analysis", intent_analysis),
         "serp_patterns": outline_data.get("serp_patterns", {}),
         "sections": sections,
         "word_count_target": outline_data.get("word_count_target", 0),
@@ -246,7 +248,11 @@ def generate_outline(
         "related_topics": outline_data.get("related_topics", []),
         "serp_optimization": outline_data.get("serp_optimization"),
         "competitive_gaps": outline_data.get("competitive_gaps"),
-        "serp_features": serp_features_response
+        "serp_features": serp_features_response,
+        # Existing content optimization fields
+        "optimization_mode": outline_data.get("optimization_mode", False),
+        "existing_url": outline_data.get("existing_url"),
+        "content_annotations": outline_data.get("content_annotations", [])
     }
 
     # Save outline to database with full brief data
@@ -286,7 +292,11 @@ def generate_outline(
         related_topics=brief_data["related_topics"],
         serp_optimization=brief_data["serp_optimization"],
         competitive_gaps=brief_data["competitive_gaps"],
-        serp_features=brief_data["serp_features"]
+        serp_features=brief_data["serp_features"],
+        # Existing content optimization fields
+        optimization_mode=brief_data.get("optimization_mode", False),
+        existing_url=brief_data.get("existing_url"),
+        content_annotations=brief_data.get("content_annotations", [])
     )
 
 

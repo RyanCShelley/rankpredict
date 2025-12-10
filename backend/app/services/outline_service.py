@@ -36,7 +36,8 @@ class OutlineService:
         serp_medians: Dict[str, float],
         intent_analysis: Dict,
         content_type: str = "new",
-        serp_features: Optional[Dict] = None
+        serp_features: Optional[Dict] = None,
+        existing_content: Optional[Dict] = None
     ) -> Dict:
         """
         Generate dynamic content brief using LLM based on SERP analysis
@@ -48,6 +49,7 @@ class OutlineService:
             intent_analysis: Intent analysis from IntentService
             content_type: "new" or "existing"
             serp_features: Extracted SERP features (PAA, related, etc.)
+            existing_content: For existing content mode, the analyzed content data
 
         Returns:
             Dictionary with dynamic brief structure
@@ -61,7 +63,7 @@ class OutlineService:
         )
 
         if content_type == "existing":
-            return self._generate_optimization_plan(keyword, serp_context, serp_medians)
+            return self._generate_optimization_plan(keyword, serp_context, serp_medians, existing_content, serp_features)
         else:
             return self._generate_content_brief(keyword, serp_context, serp_medians, intent_analysis, serp_features)
 
@@ -484,14 +486,226 @@ Return ONLY valid JSON, no markdown code blocks or other formatting."""
         self,
         keyword: str,
         serp_context: str,
-        serp_medians: Dict[str, float]
+        serp_medians: Dict[str, float],
+        existing_content: Optional[Dict] = None,
+        serp_features: Optional[Dict] = None
     ) -> Dict:
-        """Generate optimization plan for existing content"""
-        return {
-            "keyword": keyword,
-            "optimization_mode": True,
-            "serp_analysis": serp_context
-        }
+        """Generate comprehensive optimization plan for existing content"""
+
+        # If we don't have existing content data, return basic structure
+        if not existing_content:
+            return {
+                "keyword": keyword,
+                "optimization_mode": True,
+                "serp_analysis": serp_context,
+                "sections": [],
+                "word_count_target": int(serp_medians.get("word_count", 1500))
+            }
+
+        # Build comprehensive optimization prompt
+        current_wc = existing_content.get("word_count", 0)
+        target_wc = serp_medians.get("word_count", 1500)
+        current_flesch = existing_content.get("flesch_reading_ease_score", 50)
+        target_flesch = serp_medians.get("flesch_reading_ease_score", 60)
+
+        # Word count strategy
+        if current_wc < target_wc * 0.8:
+            wc_strategy = f"INCREASE word count by {int(target_wc - current_wc)} words to match competitors"
+        elif current_wc > target_wc * 1.3:
+            wc_strategy = f"Consider TRIMMING content - you have {int(current_wc - target_wc)} more words than competitors"
+        else:
+            wc_strategy = "Word count is competitive - focus on quality over quantity"
+
+        # Readability strategy
+        if current_flesch < target_flesch - 10:
+            readability_strategy = f"SIMPLIFY content - current readability ({current_flesch:.0f}) is harder than competitors ({target_flesch:.0f}). Use shorter sentences and simpler words."
+        elif current_flesch > target_flesch + 10:
+            readability_strategy = f"Content may be TOO simple ({current_flesch:.0f} vs {target_flesch:.0f}). Consider adding more technical depth."
+        else:
+            readability_strategy = "Readability aligns with competitor content"
+
+        # Current headings
+        current_h2s = existing_content.get("h2_headings", [])
+        h2_context = "\n".join([f"- {h}" for h in current_h2s[:10]]) if current_h2s else "No H2 headings found"
+
+        # Page content for annotation
+        page_text = existing_content.get("page_text", "")[:5000]
+
+        prompt = f"""You are a senior SEO content strategist. Analyze this EXISTING content and create a detailed optimization plan to improve rankings.
+
+{serp_context}
+
+## CURRENT PAGE ANALYSIS
+**URL:** {existing_content.get('url', 'Unknown')}
+**Current Word Count:** {current_wc}
+**Target Word Count:** {target_wc:.0f}
+**Word Count Strategy:** {wc_strategy}
+
+**Current Readability (Flesch):** {current_flesch:.0f}
+**Target Readability:** {target_flesch:.0f}
+**Readability Strategy:** {readability_strategy}
+
+**Current H2 Headings:**
+{h2_context}
+
+**Current Page Content (excerpt):**
+{page_text[:3000]}
+
+## YOUR TASK
+
+Create a comprehensive optimization brief for this EXISTING content that includes:
+
+1. **Recommended Title** - An optimized H1 that will perform better for this keyword
+
+2. **Content Strategy Analysis**
+   - Word count: Current vs Target with action (increase/decrease/maintain)
+   - Readability: Current vs Target with specific suggestions
+   - Schema types needed
+
+3. **Annotated Content Improvements**
+   - List specific text changes needed with the format:
+     - ORIGINAL: "current text excerpt"
+     - IMPROVED: "suggested replacement text"
+     - REASON: "why this change helps SEO"
+   - Include 5-10 specific text improvements
+
+4. **Content Outline** - What the optimized page structure should look like:
+   - H2 sections (mark existing sections to KEEP, REMOVE, or MODIFY)
+   - NEW sections to ADD
+   - Target word count per section
+
+5. **Semantic Coverage** - Topics and entities to add/improve
+
+6. **SERP Feature Optimization** - How to win featured snippets, PAA, etc.
+
+7. **Competitive Gaps** - What competitors do that this page doesn't
+
+Return as JSON:
+{{
+  "title_recommendation": "<optimized H1>",
+  "meta_description": "<optimized meta under 160 chars>",
+  "content_strategy": {{
+    "word_count_current": {current_wc},
+    "word_count_target": {target_wc:.0f},
+    "word_count_action": "<INCREASE/DECREASE/MAINTAIN>",
+    "word_count_delta": <number to add or remove>,
+    "readability_current": {current_flesch:.0f},
+    "readability_target": "{max(target_flesch - 5, 0):.0f}-{min(target_flesch + 5, 100):.0f}",
+    "readability_action": "<SIMPLIFY/ADD_DEPTH/MAINTAIN>",
+    "schema_types": ["<type1>", "<type2>"]
+  }},
+  "content_annotations": [
+    {{
+      "original_text": "<current text excerpt>",
+      "improved_text": "<suggested replacement>",
+      "reason": "<why this helps>",
+      "priority": "<high/medium/low>"
+    }}
+  ],
+  "outline": {{
+    "sections": [
+      {{
+        "h2": "<section heading>",
+        "status": "<KEEP/MODIFY/ADD/REMOVE>",
+        "description": "<what to do with this section>",
+        "word_count_target": <number>,
+        "h3_subsections": ["<sub1>", "<sub2>"],
+        "key_points": ["<point1>", "<point2>"]
+      }}
+    ]
+  }},
+  "semantic_coverage": {{
+    "must_cover_topics": ["<topic1>", "<topic2>"],
+    "missing_entities": ["<entity1>", "<entity2>"],
+    "topics_to_strengthen": ["<topic1>", "<topic2>"]
+  }},
+  "serp_optimization": {{
+    "featured_snippet_strategy": "<how to win it>",
+    "faq_schema_questions": ["<q1>", "<q2>"],
+    "paa_questions_to_answer": ["<q1>", "<q2>"]
+  }},
+  "competitive_gaps": {{
+    "missing_from_page": ["<gap1>", "<gap2>"],
+    "strengths_to_keep": ["<strength1>", "<strength2>"],
+    "quick_wins": ["<win1>", "<win2>"]
+  }}
+}}
+
+Return ONLY valid JSON, no markdown code blocks."""
+
+        try:
+            if self.active_provider == "claude":
+                response_text = self._call_claude(prompt)
+            else:
+                response_text = self._call_openai(prompt)
+
+            brief_data = self._parse_json_response(response_text)
+
+            # Format sections for response
+            sections = []
+            for section in brief_data.get("outline", {}).get("sections", []):
+                sections.append({
+                    "heading": section.get("h2", ""),
+                    "status": section.get("status", "KEEP"),
+                    "h3_subsections": section.get("h3_subsections", []),
+                    "word_count_target": section.get("word_count_target", 0),
+                    "semantic_focus": section.get("description", ""),
+                    "key_points": section.get("key_points", []),
+                    "topics": []
+                })
+
+            return {
+                "keyword": keyword,
+                "optimization_mode": True,
+                "existing_url": existing_content.get("url", ""),
+                "title_recommendation": brief_data.get("title_recommendation", ""),
+                "meta_description": brief_data.get("meta_description", ""),
+                "content_strategy": brief_data.get("content_strategy", {
+                    "word_count_current": current_wc,
+                    "word_count_target": int(target_wc),
+                    "word_count_action": "INCREASE" if current_wc < target_wc else "MAINTAIN",
+                    "readability_current": int(current_flesch),
+                    "readability_target": f"{int(target_flesch-5)}-{int(target_flesch+5)}"
+                }),
+                "content_annotations": brief_data.get("content_annotations", []),
+                "sections": sections,
+                "word_count_target": int(target_wc),
+                "topics": brief_data.get("semantic_coverage", {}).get("must_cover_topics", []),
+                "related_topics": brief_data.get("semantic_coverage", {}).get("topics_to_strengthen", []),
+                "entities": brief_data.get("semantic_coverage", {}).get("missing_entities", []),
+                "structure_type": "optimization",
+                "serp_optimization": brief_data.get("serp_optimization", {}),
+                "competitive_gaps": brief_data.get("competitive_gaps", {}),
+                "serp_features": serp_features or {},
+                "intent_analysis": {"intent_type": "optimization", "content_format": "existing_page"}
+            }
+
+        except Exception as e:
+            print(f"Error generating optimization plan: {e}")
+            import traceback
+            traceback.print_exc()
+
+            # Return basic structure on error
+            return {
+                "keyword": keyword,
+                "optimization_mode": True,
+                "existing_url": existing_content.get("url", ""),
+                "content_strategy": {
+                    "word_count_current": current_wc,
+                    "word_count_target": int(target_wc),
+                    "word_count_action": "INCREASE" if current_wc < target_wc else "MAINTAIN",
+                    "word_count_delta": int(target_wc - current_wc),
+                    "readability_current": int(current_flesch),
+                    "readability_target": f"{int(target_flesch-5)}-{int(target_flesch+5)}",
+                    "readability_action": "SIMPLIFY" if current_flesch < target_flesch - 10 else "MAINTAIN"
+                },
+                "sections": [],
+                "word_count_target": int(target_wc),
+                "topics": [],
+                "entities": [],
+                "serp_features": serp_features or {},
+                "intent_analysis": {"intent_type": "optimization"}
+            }
 
 
 def get_outline_service() -> OutlineService:
