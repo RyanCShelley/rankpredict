@@ -23,11 +23,26 @@ app.add_middleware(
     expose_headers=["*"],
 )
 
-# Initialize database on startup
+# Initialize database and preload models on startup
 @app.on_event("startup")
 async def startup_event():
     init_db()
     print("RankPredict v2 API started")
+
+    # Preload ML model and sentence transformer to avoid cold start delays
+    try:
+        from app.models.ml_model import model_instance
+        if model_instance.model is not None:
+            print("ML model preloaded")
+    except Exception as e:
+        print(f"ML model preload skipped: {e}")
+
+    try:
+        from app.services.semantic_service import get_embedding_model
+        get_embedding_model()  # This loads sentence-transformers
+        print("Sentence transformer preloaded")
+    except Exception as e:
+        print(f"Sentence transformer preload skipped: {e}")
 
 # Include routers
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
