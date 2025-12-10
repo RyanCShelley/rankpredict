@@ -1,0 +1,17 @@
+[
+  "dt_gap",
+  "dt_ratio",
+  "refdoms_gap",
+  "refdoms_ratio",
+  "wc_gap",
+  "wc_ratio",
+  "sent_count_gap",
+  "awps_gap",
+  "flesch_gap",
+  "semantic_gap",
+  "semantic_ratio",
+  "internal_links_gap",
+  "schema_total_gap",
+  "schema_unique_gap",
+  "rich_features_gap"
+]
