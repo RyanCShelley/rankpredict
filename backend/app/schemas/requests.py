@@ -53,6 +53,18 @@ class GenerateOutlineRequest(BaseModel):
     )
 
 
+class ScoreSpecificKeywordsRequest(BaseModel):
+    """Request to score specific keywords by ID"""
+    keyword_ids: List[int] = Field(..., description="List of keyword IDs to score")
+
+
+class UpdateKeywordListRequest(BaseModel):
+    """Request to update keyword list settings"""
+    name: Optional[str] = Field(None, description="New name for the list")
+    client_vertical: Optional[str] = Field(None, description="Business vertical")
+    client_vertical_keywords: Optional[List[str]] = Field(None, description="Core topic keywords")
+
+
 class LoginRequest(BaseModel):
     """Request for user login"""
     username: str

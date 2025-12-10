@@ -388,56 +388,6 @@ const OutlineBuilder = () => {
         </div>
       )}
 
-      {/* Improvement Plan (Existing Content) */}
-      {improvementPlan && (
-        <div className="bg-white rounded-lg shadow p-6 mb-6">
-          <h2 className="text-xl font-semibold mb-4">Improvement Plan</h2>
-          <div className="space-y-4">
-            <div>
-              <h3 className="font-medium mb-2">Gap Analysis</h3>
-              <div className="space-y-2">
-                {Object.entries(improvementPlan.gap_analysis || {}).map(([metric, data]) => (
-                  <div key={metric} className="border-l-4 border-blue-500 pl-4">
-                    <div className="font-medium">{metric}</div>
-                    <div className="text-sm text-gray-600">
-                      Current: {data.current?.toFixed(0) || 0} → Target: {data.target?.toFixed(0) || 0}
-                      {data.gap_percentage && (
-                        <span className={`ml-2 ${data.gap_percentage < 0 ? 'text-red-600' : 'text-green-600'}`}>
-                          ({data.gap_percentage > 0 ? '+' : ''}{data.gap_percentage.toFixed(0)}%)
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <h3 className="font-medium mb-2">Priority Actions</h3>
-              <div className="space-y-2">
-                {improvementPlan.priority_actions?.map((action, idx) => (
-                  <div key={idx} className="border-l-4 border-yellow-500 pl-4">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <div className="font-medium">{action.metric}</div>
-                        <div className="text-sm text-gray-600">{action.issue}</div>
-                        <div className="text-sm text-blue-600 mt-1">{action.action}</div>
-                      </div>
-                      <span className={`px-2 py-1 rounded text-xs ${
-                        action.priority === 'High' ? 'bg-red-100 text-red-800' :
-                        action.priority === 'Medium' ? 'bg-yellow-100 text-yellow-800' :
-                        'bg-gray-100 text-gray-800'
-                      }`}>
-                        {action.priority}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Content Brief Display */}
       {outline && (
@@ -865,7 +815,40 @@ const OutlineBuilder = () => {
 
             {outline.competitive_gaps && (
               <div className="bg-white rounded-lg shadow p-6">
-                <h3 className="text-lg font-semibold mb-4">Competitive Gaps</h3>
+                <h3 className="text-lg font-semibold mb-4">Action Summary</h3>
+
+                {/* Action Summary for Optimization Mode - Clean prioritized list */}
+                {outline.optimization_mode && (outline.competitive_gaps.quick_wins?.length > 0 || outline.competitive_gaps.missing_from_page?.length > 0) && (
+                  <div className="mb-6 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg">
+                    <ol className="space-y-2">
+                      {outline.competitive_gaps.quick_wins?.map((win, idx) => (
+                        <li key={`qw-${idx}`} className="flex items-start gap-2 text-sm">
+                          <span className="flex-shrink-0 w-6 h-6 bg-orange-500 text-white rounded-full flex items-center justify-center text-xs font-bold">
+                            {idx + 1}
+                          </span>
+                          <span className="text-gray-700">{win}</span>
+                        </li>
+                      ))}
+                      {outline.competitive_gaps.missing_from_page?.map((gap, idx) => (
+                        <li key={`mp-${idx}`} className="flex items-start gap-2 text-sm">
+                          <span className="flex-shrink-0 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-xs font-bold">
+                            {(outline.competitive_gaps.quick_wins?.length || 0) + idx + 1}
+                          </span>
+                          <span className="text-gray-700">{gap}</span>
+                        </li>
+                      ))}
+                    </ol>
+                    {outline.competitive_gaps.strengths_to_keep?.length > 0 && (
+                      <div className="mt-4 pt-3 border-t border-blue-200">
+                        <p className="text-xs text-green-700 font-medium mb-1">Keep these strengths:</p>
+                        <p className="text-xs text-gray-600">
+                          {outline.competitive_gaps.strengths_to_keep.join(' • ')}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* New content format */}
                 {outline.competitive_gaps.missing_from_competitors?.length > 0 && (
                   <div className="mb-4">
@@ -897,8 +880,8 @@ const OutlineBuilder = () => {
                     </ul>
                   </div>
                 )}
-                {/* Optimization mode format */}
-                {outline.competitive_gaps.missing_from_page?.length > 0 && (
+                {/* Optimization mode detailed breakdown (collapsed by default when Action Summary is shown) */}
+                {!outline.optimization_mode && outline.competitive_gaps.missing_from_page?.length > 0 && (
                   <div className="mb-4">
                     <h4 className="font-medium text-red-700 mb-2">Missing from Your Page</h4>
                     <ul className="list-disc list-inside text-sm text-gray-600">
@@ -908,7 +891,7 @@ const OutlineBuilder = () => {
                     </ul>
                   </div>
                 )}
-                {outline.competitive_gaps.strengths_to_keep?.length > 0 && (
+                {!outline.optimization_mode && outline.competitive_gaps.strengths_to_keep?.length > 0 && (
                   <div className="mb-4">
                     <h4 className="font-medium text-green-700 mb-2">Strengths to Keep</h4>
                     <ul className="list-disc list-inside text-sm text-gray-600">
@@ -918,7 +901,7 @@ const OutlineBuilder = () => {
                     </ul>
                   </div>
                 )}
-                {outline.competitive_gaps.quick_wins?.length > 0 && (
+                {!outline.optimization_mode && outline.competitive_gaps.quick_wins?.length > 0 && (
                   <div>
                     <h4 className="font-medium text-orange-700 mb-2">Quick Wins</h4>
                     <ul className="list-disc list-inside text-sm text-gray-600">

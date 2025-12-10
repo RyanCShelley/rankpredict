@@ -89,6 +89,18 @@ export const strategyAPI = {
       keywords
     });
     return response.data;
+  },
+
+  scoreSelectedKeywords: async (listId, keywordIds) => {
+    const response = await api.post(`/api/strategy/lists/${listId}/score-selected`, {
+      keyword_ids: keywordIds
+    });
+    return response.data;
+  },
+
+  updateList: async (listId, updates) => {
+    const response = await api.patch(`/api/strategy/lists/${listId}`, updates);
+    return response.data;
   }
 };
 

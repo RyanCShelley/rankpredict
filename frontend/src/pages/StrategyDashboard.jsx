@@ -35,6 +35,17 @@ const StrategyDashboard = () => {
   const [scoring, setScoring] = useState(false);
   const [deletingList, setDeletingList] = useState(false);
   const [error, setError] = useState('');
+  // Row selection for scoring
+  const [selectedForScoring, setSelectedForScoring] = useState(new Set());
+  // Table filters
+  const [filterTier, setFilterTier] = useState('all');
+  const [filterScored, setFilterScored] = useState('all');
+  const [filterSearch, setFilterSearch] = useState('');
+  // Edit list settings
+  const [showEditSettings, setShowEditSettings] = useState(false);
+  const [editVertical, setEditVertical] = useState('');
+  const [editVerticalKeywords, setEditVerticalKeywords] = useState('');
+  const [savingSettings, setSavingSettings] = useState(false);
 
   useEffect(() => {
     loadLists();
@@ -54,6 +65,7 @@ const StrategyDashboard = () => {
       const data = await strategyAPI.getList(listId);
       setSelectedList(data);
       setShowCreateForm(false);
+      setSelectedForScoring(new Set()); // Clear selection when switching lists
     } catch (err) {
       setError('Error loading list: ' + (err.response?.data?.detail || err.message));
     }
@@ -99,24 +111,60 @@ const StrategyDashboard = () => {
     }
   };
 
-  const handleScoreKeywords = async (forceRescore = false) => {
-    if (!selectedList) return;
+  const handleScoreKeywords = async () => {
+    if (!selectedList || selectedForScoring.size === 0) return;
 
     setScoring(true);
     setError('');
 
     try {
-      const data = await strategyAPI.scoreKeywords(selectedList.id, forceRescore);
-      // Update selectedList with scored keywords directly (preserves fit scores)
-      setSelectedList(prev => ({
-        ...prev,
-        keywords: data.keywords
-      }));
+      const keywordIds = Array.from(selectedForScoring);
+      const data = await strategyAPI.scoreSelectedKeywords(selectedList.id, keywordIds);
+
+      // Merge scored keywords into existing list
+      setSelectedList(prev => {
+        const scoredMap = new Map(data.keywords.map(k => [k.id, k]));
+        return {
+          ...prev,
+          keywords: prev.keywords.map(k => scoredMap.get(k.id) || k)
+        };
+      });
+
+      // Clear selection after scoring
+      setSelectedForScoring(new Set());
     } catch (err) {
       setError('Error scoring keywords: ' + (err.response?.data?.detail || err.message));
     } finally {
       setScoring(false);
     }
+  };
+
+  const handleSaveListSettings = async () => {
+    if (!selectedList) return;
+    setSavingSettings(true);
+    setError('');
+
+    try {
+      const updates = {
+        client_vertical: editVertical || null,
+        client_vertical_keywords: editVerticalKeywords
+          ? editVerticalKeywords.split('\n').map(k => k.trim()).filter(k => k)
+          : null
+      };
+      await strategyAPI.updateList(selectedList.id, updates);
+      await loadList(selectedList.id);
+      setShowEditSettings(false);
+    } catch (err) {
+      setError('Error saving settings: ' + (err.response?.data?.detail || err.message));
+    } finally {
+      setSavingSettings(false);
+    }
+  };
+
+  const openEditSettings = () => {
+    setEditVertical(selectedList?.client_profile?.vertical || '');
+    setEditVerticalKeywords(selectedList?.client_profile?.vertical_keywords?.join('\n') || '');
+    setShowEditSettings(true);
   };
 
   const handleUpdateKeyword = async (keywordId, updates) => {
@@ -190,21 +238,22 @@ const StrategyDashboard = () => {
 
     const hasClientProfile = selectedList.client_profile;
     const headers = hasClientProfile
-      ? ['Keyword', 'Win Score', 'Tier', 'Domain Fit', 'Intent Fit', 'Client Forecast', 'Forecast Tier', 'Approved']
+      ? ['Keyword', 'Win Score', 'Priority Tier', 'Domain Fit', 'Intent Fit', 'Forecast Score', 'Approved']
       : ['Keyword', 'Rankability Score', 'Tier', 'Approved'];
 
     const csv = [
       headers.join(','),
       ...selectedList.keywords.map(k => {
         if (hasClientProfile) {
+          // Use composite tier as primary, derived from client_forecast
+          const primaryTier = k.client_forecast ? k.client_forecast.tier : k.opportunity_tier;
           return [
             k.keyword,
             (k.rankability_score * 100).toFixed(1) + '%',
-            k.opportunity_tier,
+            primaryTier,
             k.domain_fit ? k.domain_fit.score.toFixed(1) + '%' : 'N/A',
             k.intent_fit ? k.intent_fit.score.toFixed(1) + '%' : 'N/A',
             k.client_forecast ? k.client_forecast.score.toFixed(1) + '%' : 'N/A',
-            k.client_forecast ? k.client_forecast.tier : 'N/A',
             k.is_selected ? 'Yes' : 'No'
           ].join(',');
         } else {
@@ -282,6 +331,72 @@ const StrategyDashboard = () => {
   };
 
   const selectedCount = selectedList?.keywords?.filter(k => k.is_selected).length || 0;
+
+  // Check if keyword is scored (has scored_at timestamp)
+  const isKeywordScored = (keyword) => {
+    // A keyword is scored if it has a forecast_pct OR rankability_score > 0
+    // (scored_at is not returned in API response, so check actual score values)
+    return (keyword.forecast_pct !== null && keyword.forecast_pct !== undefined) ||
+           (keyword.rankability_score !== null && keyword.rankability_score > 0);
+  };
+
+  // Toggle selection for scoring
+  const toggleScoringSelection = (keywordId) => {
+    setSelectedForScoring(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(keywordId)) {
+        newSet.delete(keywordId);
+      } else {
+        newSet.add(keywordId);
+      }
+      return newSet;
+    });
+  };
+
+  // Select all visible keywords for scoring
+  const selectAllForScoring = () => {
+    const filteredIds = getFilteredKeywords().map(k => k.id);
+    setSelectedForScoring(new Set(filteredIds));
+  };
+
+  // Clear all scoring selections
+  const clearScoringSelection = () => {
+    setSelectedForScoring(new Set());
+  };
+
+  // Filter keywords based on current filters
+  const getFilteredKeywords = () => {
+    if (!selectedList?.keywords) return [];
+
+    return selectedList.keywords.filter(keyword => {
+      // Search filter
+      if (filterSearch && !keyword.keyword.toLowerCase().includes(filterSearch.toLowerCase())) {
+        return false;
+      }
+
+      // Scored filter
+      if (filterScored === 'scored' && !isKeywordScored(keyword)) {
+        return false;
+      }
+      if (filterScored === 'unscored' && isKeywordScored(keyword)) {
+        return false;
+      }
+
+      // Tier filter
+      if (filterTier !== 'all') {
+        const tier = selectedList.client_profile && keyword.client_forecast
+          ? keyword.client_forecast.tier
+          : keyword.opportunity_tier;
+        if (tier !== filterTier) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  };
+
+  const filteredKeywords = getFilteredKeywords();
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -475,42 +590,149 @@ const StrategyDashboard = () => {
         <div className="lg:col-span-3">
           {selectedList ? (
             <div className="bg-white rounded-lg shadow">
-              <div className="p-4 border-b flex justify-between items-center">
-                <div>
-                  <h2 className="text-xl font-semibold">{selectedList.name}</h2>
-                  <p className="text-sm text-gray-600">{selectedList.target_domain_url}</p>
-                  {selectedList.client_profile && (
-                    <p className="text-sm text-blue-600 mt-1">
-                      Vertical: {VERTICALS.find(v => v.value === selectedList.client_profile.vertical)?.label || selectedList.client_profile.vertical}
-                      {selectedList.client_profile.vertical_keywords?.length > 0 && (
-                        <span className="text-gray-500"> ({selectedList.client_profile.vertical_keywords.length} keywords)</span>
-                      )}
-                    </p>
-                  )}
+              <div className="p-4 border-b">
+                <div className="flex justify-between items-center mb-4">
+                  <div>
+                    <h2 className="text-xl font-semibold">{selectedList.name}</h2>
+                    <p className="text-sm text-gray-600">{selectedList.target_domain_url}</p>
+                    {selectedList.client_profile ? (
+                      <p className="text-sm text-blue-600 mt-1">
+                        Vertical: {VERTICALS.find(v => v.value === selectedList.client_profile.vertical)?.label || selectedList.client_profile.vertical}
+                        {selectedList.client_profile.vertical_keywords?.length > 0 && (
+                          <span className="text-gray-500"> ({selectedList.client_profile.vertical_keywords.length} topics)</span>
+                        )}
+                        <button
+                          onClick={openEditSettings}
+                          className="ml-2 text-xs text-gray-500 hover:text-gray-700 underline"
+                        >
+                          Edit
+                        </button>
+                      </p>
+                    ) : (
+                      <button
+                        onClick={openEditSettings}
+                        className="text-sm text-blue-600 hover:text-blue-700 mt-1"
+                      >
+                        + Add Client Profile
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleScoreKeywords}
+                      disabled={scoring || selectedForScoring.size === 0}
+                      className="px-4 py-2 bg-[#223540] text-white rounded-md hover:bg-[#00a99d] disabled:opacity-50 disabled:cursor-not-allowed"
+                      title="Score selected keywords"
+                    >
+                      {scoring ? 'Scoring...' : `Score Keywords${selectedForScoring.size > 0 ? ` (${selectedForScoring.size})` : ''}`}
+                    </button>
+                    <button
+                      onClick={handleExport}
+                      className="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600"
+                    >
+                      Export CSV
+                    </button>
+                  </div>
                 </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => handleScoreKeywords(false)}
-                    disabled={scoring}
-                    className="px-4 py-2 bg-[#223540] text-white rounded-md hover:bg-[#00a99d] disabled:opacity-50"
-                    title="Score only new/unscored keywords"
+
+                {/* Edit Settings Modal */}
+                {showEditSettings && (
+                  <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                    <h3 className="font-medium text-gray-800 mb-3">Client Profile Settings</h3>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Business Vertical</label>
+                        <select
+                          value={editVertical}
+                          onChange={(e) => setEditVertical(e.target.value)}
+                          className="w-full px-3 py-2 border rounded-md text-sm"
+                        >
+                          {VERTICALS.map(v => (
+                            <option key={v.value} value={v.value}>{v.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Core Topics (one per line)</label>
+                        <textarea
+                          value={editVerticalKeywords}
+                          onChange={(e) => setEditVerticalKeywords(e.target.value)}
+                          placeholder="SEO services&#10;digital marketing&#10;content strategy"
+                          rows={3}
+                          className="w-full px-3 py-2 border rounded-md text-sm"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex gap-2 mt-3">
+                      <button
+                        onClick={handleSaveListSettings}
+                        disabled={savingSettings}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700 disabled:opacity-50"
+                      >
+                        {savingSettings ? 'Saving...' : 'Save Settings'}
+                      </button>
+                      <button
+                        onClick={() => setShowEditSettings(false)}
+                        className="px-4 py-2 bg-gray-300 text-gray-700 rounded-md text-sm hover:bg-gray-400"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Filter Controls */}
+                <div className="flex flex-wrap gap-3 items-center">
+                  <input
+                    type="text"
+                    placeholder="Search keywords..."
+                    value={filterSearch}
+                    onChange={(e) => setFilterSearch(e.target.value)}
+                    className="px-3 py-1.5 border rounded text-sm w-48"
+                  />
+                  <select
+                    value={filterScored}
+                    onChange={(e) => setFilterScored(e.target.value)}
+                    className="px-3 py-1.5 border rounded text-sm"
                   >
-                    {scoring ? 'Scoring...' : 'Score New'}
-                  </button>
-                  <button
-                    onClick={() => handleScoreKeywords(true)}
-                    disabled={scoring}
-                    className="px-4 py-2 bg-orange-600 text-white rounded-md hover:bg-orange-700 disabled:opacity-50"
-                    title="Re-score all keywords (fresh SERP data)"
+                    <option value="all">All Keywords</option>
+                    <option value="scored">Scored Only</option>
+                    <option value="unscored">Unscored Only</option>
+                  </select>
+                  <select
+                    value={filterTier}
+                    onChange={(e) => setFilterTier(e.target.value)}
+                    className="px-3 py-1.5 border rounded text-sm"
                   >
-                    {scoring ? 'Scoring...' : 'Re-Score All'}
-                  </button>
-                  <button
-                    onClick={handleExport}
-                    className="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600"
-                  >
-                    Export CSV
-                  </button>
+                    <option value="all">All Tiers</option>
+                    {selectedList.client_profile ? (
+                      <>
+                        <option value="HIGH_PRIORITY">High Priority</option>
+                        <option value="GOOD_FIT">Good Fit</option>
+                        <option value="CONSIDER">Consider</option>
+                        <option value="LONG_TERM">Long Term</option>
+                        <option value="NOT_RECOMMENDED">Not Recommended</option>
+                      </>
+                    ) : (
+                      <>
+                        <option value="T1_GO_NOW">T1 - Go Now</option>
+                        <option value="T2_STRATEGIC">T2 - Strategic</option>
+                        <option value="T3_LONG_GAME">T3 - Long Game</option>
+                        <option value="T4_NOT_WORTH_IT">T4 - Not Worth It</option>
+                      </>
+                    )}
+                  </select>
+                  <span className="text-sm text-gray-500">
+                    Showing {filteredKeywords.length} of {selectedList.keywords?.length || 0} keywords
+                  </span>
+                  {selectedForScoring.size > 0 && (
+                    <button
+                      onClick={clearScoringSelection}
+                      className="text-sm text-gray-500 hover:text-gray-700 underline"
+                    >
+                      Clear selection
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -518,72 +740,145 @@ const StrategyDashboard = () => {
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Keyword</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Win Score</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tier</th>
+                      <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase w-10">
+                        <input
+                          type="checkbox"
+                          checked={filteredKeywords.length > 0 && filteredKeywords.every(k => selectedForScoring.has(k.id))}
+                          onChange={(e) => e.target.checked ? selectAllForScoring() : clearScoringSelection()}
+                          className="h-4 w-4"
+                          title="Select all for scoring"
+                        />
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Keyword</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                        <div className="relative inline-block group">
+                          <span className="flex items-center gap-1 cursor-help">
+                            Win Score
+                            <svg className="w-3.5 h-3.5 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                            </svg>
+                          </span>
+                          <div className="absolute left-0 top-full mt-1 w-64 p-2 bg-gray-900 text-white text-xs rounded shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 font-normal normal-case">
+                            Probability of ranking in Top 10 based on your site's authority vs SERP competition
+                          </div>
+                        </div>
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                        <div className="relative inline-block group">
+                          <span className="flex items-center gap-1 cursor-help">
+                            Tier
+                            <svg className="w-3.5 h-3.5 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                            </svg>
+                          </span>
+                          <div className="absolute left-0 top-full mt-1 w-72 p-2 bg-gray-900 text-white text-xs rounded shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 font-normal normal-case">
+                            {selectedList.client_profile ? (
+                              <>Composite priority (40% Win + 35% Domain + 25% Intent): <span className="text-green-400">High</span> ≥70 · <span className="text-blue-400">Good</span> 50-69 · <span className="text-yellow-400">Consider</span> 35-49 · <span className="text-orange-400">Long Term</span> 20-34 · <span className="text-red-400">Not Rec</span> &lt;20</>
+                            ) : (
+                              <>Win score ranking: <span className="text-green-400">T1</span> ≥20% · <span className="text-blue-400">T2</span> 10-19% · <span className="text-yellow-400">T3</span> 4-9% · <span className="text-red-400">T4</span> &lt;4%</>
+                            )}
+                          </div>
+                        </div>
+                      </th>
                       {selectedList.client_profile && (
                         <>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Domain Fit</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Intent Fit</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Forecast</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                            <div className="relative inline-block group">
+                              <span className="flex items-center gap-1 cursor-help">
+                                Domain Fit
+                                <svg className="w-3.5 h-3.5 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                                </svg>
+                              </span>
+                              <div className="absolute left-0 top-full mt-1 w-56 p-2 bg-gray-900 text-white text-xs rounded shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 font-normal normal-case">
+                                How your domain authority compares to SERP competitors (0-100%)
+                              </div>
+                            </div>
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                            <div className="relative inline-block group">
+                              <span className="flex items-center gap-1 cursor-help">
+                                Intent Fit
+                                <svg className="w-3.5 h-3.5 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                                </svg>
+                              </span>
+                              <div className="absolute left-0 top-full mt-1 w-56 p-2 bg-gray-900 text-white text-xs rounded shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 font-normal normal-case">
+                                How well keyword matches your business vertical (0-100%)
+                              </div>
+                            </div>
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                            <div className="relative inline-block group">
+                              <span className="flex items-center gap-1 cursor-help">
+                                Forecast
+                                <svg className="w-3.5 h-3.5 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                                </svg>
+                              </span>
+                              <div className="absolute left-0 top-full mt-1 w-56 p-2 bg-gray-900 text-white text-xs rounded shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 font-normal normal-case">
+                                Combined score: 40% Win Score + 35% Domain Fit + 25% Intent Fit
+                              </div>
+                            </div>
+                          </th>
                         </>
                       )}
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Approved</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Remove</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Approved</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Remove</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {selectedList.keywords
-                      .sort((a, b) => b.rankability_score - a.rankability_score)
+                    {filteredKeywords
+                      .sort((a, b) => {
+                        // Unscored keywords go to top, then sort by rankability score
+                        const aScored = isKeywordScored(a);
+                        const bScored = isKeywordScored(b);
+                        if (aScored !== bScored) return aScored ? 1 : -1;
+                        return b.rankability_score - a.rankability_score;
+                      })
                       .map(keyword => (
-                        <tr key={keyword.id}>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">{keyword.keyword}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm">
-                            <div className="flex items-center gap-2">
+                        <tr key={keyword.id} className={selectedForScoring.has(keyword.id) ? 'bg-blue-50' : ''}>
+                          <td className="px-3 py-4 whitespace-nowrap">
+                            <input
+                              type="checkbox"
+                              checked={selectedForScoring.has(keyword.id)}
+                              onChange={() => toggleScoringSelection(keyword.id)}
+                              className="h-4 w-4"
+                              title="Select for scoring"
+                            />
+                          </td>
+                          <td className="px-4 py-4 whitespace-nowrap text-sm font-medium">{keyword.keyword}</td>
+                          <td className="px-4 py-4 whitespace-nowrap text-sm">
+                            {isKeywordScored(keyword) ? (
                               <span className="font-medium">
                                 {keyword.forecast_pct !== null && keyword.forecast_pct !== undefined
                                   ? `${keyword.forecast_pct.toFixed(1)}%`
                                   : `${(keyword.rankability_score * 100).toFixed(1)}%`}
                               </span>
-                              <div className="relative inline-block group">
-                                <svg
-                                  className="w-4 h-4 text-gray-400 hover:text-gray-600 cursor-help"
-                                  fill="currentColor"
-                                  viewBox="0 0 20 20"
-                                  xmlns="http://www.w3.org/2000/svg"
-                                >
-                                  <path
-                                    fillRule="evenodd"
-                                    d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11.718-1.197A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z"
-                                    clipRule="evenodd"
-                                  />
-                                </svg>
-                                {keyword.tier_explanation && (
-                                  <div className="absolute left-0 bottom-full mb-2 w-80 p-3 bg-gray-900 text-white text-xs rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
-                                    <div className="font-semibold mb-2 text-sm">
-                                      {getTierDisplayName(keyword.opportunity_tier)}
-                                      {keyword.forecast_pct !== null && keyword.forecast_pct !== undefined && (
-                                        <span className="ml-2 text-gray-300">({keyword.forecast_pct.toFixed(1)}%)</span>
-                                      )}
-                                    </div>
-                                    <div className="text-gray-200">{keyword.tier_explanation}</div>
-                                    <div className="absolute bottom-0 left-4 transform translate-y-full">
-                                      <div className="w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
+                            ) : (
+                              <span className="text-gray-400 italic text-xs">Run to get scores</span>
+                            )}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <span className={`px-2 py-1 rounded text-xs font-medium ${getTierColor(keyword.opportunity_tier)}`}>
-                              {getTierDisplayName(keyword.opportunity_tier)}
-                            </span>
+                          <td className="px-4 py-4 whitespace-nowrap">
+                            {isKeywordScored(keyword) ? (
+                              /* Show composite forecast tier if client profile exists and client_forecast available */
+                              selectedList.client_profile && keyword.client_forecast ? (
+                                <span className={`px-2 py-1 rounded text-xs font-medium ${getClientForecastColor(keyword.client_forecast.tier)}`}>
+                                  {getClientForecastDisplayName(keyword.client_forecast.tier)}
+                                </span>
+                              ) : (
+                                <span className={`px-2 py-1 rounded text-xs font-medium ${getTierColor(keyword.opportunity_tier)}`}>
+                                  {getTierDisplayName(keyword.opportunity_tier)}
+                                </span>
+                              )
+                            ) : (
+                              <span className="text-gray-400 italic text-xs">-</span>
+                            )}
                           </td>
                           {/* Fit score columns - only show if client profile exists */}
                           {selectedList.client_profile && (
                             <>
-                              <td className="px-6 py-4 whitespace-nowrap">
+                              <td className="px-4 py-4 whitespace-nowrap">
                                 {keyword.domain_fit ? (
                                   <div className="relative inline-block group">
                                     <span className={`font-medium ${getFitScoreColor(keyword.domain_fit.score)}`}>
@@ -597,7 +892,7 @@ const StrategyDashboard = () => {
                                   <span className="text-gray-400">-</span>
                                 )}
                               </td>
-                              <td className="px-6 py-4 whitespace-nowrap">
+                              <td className="px-4 py-4 whitespace-nowrap">
                                 {keyword.intent_fit ? (
                                   <div className="relative inline-block group">
                                     <span className={`font-medium ${getFitScoreColor(keyword.intent_fit.score)}`}>
@@ -611,7 +906,7 @@ const StrategyDashboard = () => {
                                   <span className="text-gray-400">-</span>
                                 )}
                               </td>
-                              <td className="px-6 py-4 whitespace-nowrap">
+                              <td className="px-4 py-4 whitespace-nowrap">
                                 {keyword.client_forecast ? (
                                   <div className="relative inline-block group">
                                     <span className={`px-2 py-1 rounded text-xs font-medium ${getClientForecastColor(keyword.client_forecast.tier)}`}>
@@ -628,7 +923,7 @@ const StrategyDashboard = () => {
                               </td>
                             </>
                           )}
-                          <td className="px-6 py-4 whitespace-nowrap">
+                          <td className="px-4 py-4 whitespace-nowrap">
                             <input
                               type="checkbox"
                               checked={keyword.is_selected}
@@ -637,7 +932,7 @@ const StrategyDashboard = () => {
                               title="Approve this keyword for content builder"
                             />
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
+                          <td className="px-4 py-4 whitespace-nowrap">
                             <button
                               onClick={() => handleDeleteKeyword(keyword.id)}
                               className="px-3 py-1 bg-red-500 text-white rounded text-sm hover:bg-red-600"
@@ -652,84 +947,6 @@ const StrategyDashboard = () => {
                 </table>
               </div>
 
-              {/* Metrics Explanation Section */}
-              <div className="p-6 bg-gray-50 border-t">
-                {/* Core Metrics */}
-                <h3 className="text-lg font-semibold mb-4">Understanding the Metrics</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-                  <div className="bg-white p-4 rounded-lg border border-gray-200">
-                    <h4 className="font-semibold text-[#223540] mb-2">Win Score</h4>
-                    <p className="text-sm text-gray-600">
-                      The probability (0-100%) that your target domain can rank in the Top 10 for this keyword.
-                      Based on comparing your site's authority metrics against the current SERP competitors,
-                      factoring in Domain Trust, referring domains, and SERP competitive gravity.
-                    </p>
-                  </div>
-
-                  <div className="bg-white p-4 rounded-lg border border-gray-200">
-                    <h4 className="font-semibold text-[#223540] mb-2">Tier</h4>
-                    <p className="text-sm text-gray-600">
-                      A categorical ranking of keyword opportunity based on Win Score:
-                      <span className="block mt-1"><span className="text-green-600 font-medium">T1 Go Now</span> (≥20%) - High probability, prioritize now</span>
-                      <span className="block"><span className="text-blue-600 font-medium">T2 Strategic</span> (10-19.9%) - Achievable with effort</span>
-                      <span className="block"><span className="text-yellow-600 font-medium">T3 Long Game</span> (4-9.9%) - Requires authority growth</span>
-                      <span className="block"><span className="text-red-600 font-medium">T4 Not Worth It</span> (&lt;4%) - Skip or find alternatives</span>
-                    </p>
-                  </div>
-
-                  {selectedList?.client_profile && (
-                    <>
-                      <div className="bg-white p-4 rounded-lg border border-purple-200">
-                        <h4 className="font-semibold text-purple-700 mb-2">Domain Fit</h4>
-                        <p className="text-sm text-gray-600">
-                          How well your domain's authority matches the SERP competition (0-100%).
-                          Compares your Domain Trust and referring domains against SERP medians.
-                          Higher = your authority is competitive for this keyword.
-                        </p>
-                        <div className="mt-2 text-xs text-gray-500">
-                          <span className="text-green-600">≥70% Strong</span> |
-                          <span className="text-blue-600"> 50-69% Good</span> |
-                          <span className="text-yellow-600"> 30-49% Weak</span> |
-                          <span className="text-red-600"> &lt;30% Poor</span>
-                        </div>
-                      </div>
-
-                      <div className="bg-white p-4 rounded-lg border border-indigo-200">
-                        <h4 className="font-semibold text-indigo-700 mb-2">Intent Fit</h4>
-                        <p className="text-sm text-gray-600">
-                          How well the keyword matches your client's business vertical (0-100%).
-                          Based on keyword pattern matching against industry-specific terms
-                          and semantic similarity to your vertical keywords.
-                        </p>
-                        <div className="mt-2 text-xs text-gray-500">
-                          <span className="text-green-600">≥70% Perfect match</span> |
-                          <span className="text-blue-600"> 50-69% Good fit</span> |
-                          <span className="text-yellow-600"> 30-49% Partial</span> |
-                          <span className="text-red-600"> &lt;30% Poor fit</span>
-                        </div>
-                      </div>
-
-                      <div className="bg-white p-4 rounded-lg border border-teal-200">
-                        <h4 className="font-semibold text-teal-700 mb-2">Forecast</h4>
-                        <p className="text-sm text-gray-600">
-                          Combined client-specific success score (0-100%) weighing:
-                          <span className="block mt-1">• 40% Win Score (can you rank?)</span>
-                          <span className="block">• 35% Domain Fit (authority match)</span>
-                          <span className="block">• 25% Intent Fit (business relevance)</span>
-                        </p>
-                        <div className="mt-2 text-xs text-gray-500">
-                          <span className="text-green-600">≥70% High Priority</span> |
-                          <span className="text-blue-600"> 50-69% Good Fit</span> |
-                          <span className="text-yellow-600"> 35-49% Consider</span> |
-                          <span className="text-orange-600"> 20-34% Long Term</span> |
-                          <span className="text-red-600"> &lt;20% Not Recommended</span>
-                        </div>
-                      </div>
-                    </>
-                  )}
-                </div>
-
-              </div>
             </div>
           ) : (
             <div className="bg-white rounded-lg shadow p-12 text-center">
