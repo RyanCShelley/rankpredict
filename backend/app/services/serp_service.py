@@ -94,28 +94,45 @@ def count_syllables(word: str) -> int:
 def extract_content_features(url: str) -> tuple:
     """
     Extract content features from URL using trafilatura for accurate content extraction.
+    Falls back to BeautifulSoup if trafilatura is not available.
     Returns: word_count, sentence_count, avg_words_per_sentence, flesch_score, html
     """
-    try:
-        import trafilatura
+    text = None
+    html = ""
 
-        # Fetch URL with trafilatura (better handling of various sites)
-        downloaded = trafilatura.fetch_url(url)
-        if not downloaded:
-            # Fallback to requests if trafilatura fetch fails
+    try:
+        # Try trafilatura first (best content extraction)
+        try:
+            import trafilatura
+            downloaded = trafilatura.fetch_url(url)
+            if downloaded:
+                html = downloaded
+                text = trafilatura.extract(downloaded, include_comments=False, include_tables=True)
+        except ImportError:
+            print("trafilatura not installed, using BeautifulSoup fallback")
+        except Exception as e:
+            print(f"trafilatura error for {url}: {e}")
+
+        # Fallback to BeautifulSoup if trafilatura didn't work
+        if not text:
             resp = requests.get(url, timeout=10, headers={
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
             })
-            downloaded = resp.text
             html = resp.text
-        else:
-            html = downloaded
 
-        # Extract main content text using trafilatura
-        text = trafilatura.extract(downloaded, include_comments=False, include_tables=True)
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(html, "html.parser")
+
+            # Remove non-content elements
+            for tag in soup.find_all(['script', 'style', 'nav', 'header', 'footer', 'aside', 'noscript']):
+                tag.decompose()
+
+            # Get text from body
+            body = soup.find('body') or soup
+            text = body.get_text(separator=" ")
+            text = re.sub(r"\s+", " ", text).strip()
 
         if not text:
-            # Fallback if trafilatura extraction fails
             return 0, 0, 0.0, 0.0, html
 
         # Filter to only alphanumeric words (remove punctuation-only tokens)
@@ -145,6 +162,8 @@ def extract_content_features(url: str) -> tuple:
         return word_count, sentence_count, avg_wps, flesch, html
     except Exception as e:
         print(f"Error extracting content from {url}: {e}")
+        import traceback
+        traceback.print_exc()
         return 0, 0, 0.0, 0.0, ""
 
 

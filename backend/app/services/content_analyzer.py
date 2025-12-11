@@ -66,6 +66,7 @@ class ContentAnalyzer:
     def analyze_existing_content(self, url: str, keyword: str) -> Dict:
         """
         Analyze existing content at URL using trafilatura for accurate extraction.
+        Falls back to BeautifulSoup if trafilatura is not available.
 
         Args:
             url: URL of existing content
@@ -75,23 +76,39 @@ class ContentAnalyzer:
             Dictionary with content metrics
         """
         try:
-            import trafilatura
+            text = None
+            html = ""
 
-            # Fetch URL with trafilatura for better content extraction
-            downloaded = trafilatura.fetch_url(url)
-            if not downloaded:
-                # Fallback to requests
+            # Try trafilatura first (best content extraction)
+            try:
+                import trafilatura
+                downloaded = trafilatura.fetch_url(url)
+                if downloaded:
+                    html = downloaded
+                    text = trafilatura.extract(downloaded, include_comments=False, include_tables=True)
+            except ImportError:
+                print("trafilatura not installed, using BeautifulSoup fallback")
+            except Exception as e:
+                print(f"trafilatura error for {url}: {e}")
+
+            # Fallback to BeautifulSoup if trafilatura didn't work
+            if not text:
                 resp = requests.get(url, timeout=10, headers={
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
                 })
                 resp.raise_for_status()
-                downloaded = resp.text
                 html = resp.text
-            else:
-                html = downloaded
 
-            # Extract main content text using trafilatura
-            text = trafilatura.extract(downloaded, include_comments=False, include_tables=True)
+                soup = BeautifulSoup(html, "html.parser")
+
+                # Remove non-content elements
+                for tag in soup.find_all(['script', 'style', 'nav', 'header', 'footer', 'aside', 'noscript']):
+                    tag.decompose()
+
+                # Get text from body
+                body = soup.find('body') or soup
+                text = body.get_text(separator=" ")
+                text = re.sub(r"\s+", " ", text).strip()
 
             if not text:
                 text = ""  # Will result in 0 word count
