@@ -483,7 +483,12 @@ class SERPService:
                 medians[metric] = float(np.median(values))
             else:
                 medians[metric] = 0.0
-        
+
+        # Fallback for flesch: if 0 or too low, use reasonable default
+        # This handles cached data from before the fix
+        if medians.get("flesch_reading_ease_score", 0) < 10:
+            medians["flesch_reading_ease_score"] = 55.0  # Reasonable default (standard difficulty)
+
         return medians
     
     def _get_default_medians(self) -> Dict:

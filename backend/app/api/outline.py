@@ -104,10 +104,16 @@ def generate_outline(
     if cached_analysis:
         # Use cached data
         enriched_results = cached_analysis.serp_data.get("enriched_results", [])
-        serp_medians = cached_analysis.serp_medians
+        serp_medians = cached_analysis.serp_medians or {}
         # Try to get cached SERP features
         serp_features = cached_analysis.serp_data.get("serp_features", None)
         raw_serp_data = cached_analysis.serp_data.get("raw_serp_data", None)
+
+        # Fix for cached data with buggy flesch/word_count values
+        if serp_medians.get("flesch_reading_ease_score", 0) < 10:
+            serp_medians["flesch_reading_ease_score"] = 55.0
+        if serp_medians.get("word_count", 0) < 100:
+            serp_medians["word_count"] = 1500.0
     else:
         # Fetch fresh SERP data
         raw_serp_data = serp_service.fetch_serp_data(keyword)
@@ -320,9 +326,14 @@ def get_improvement_plan(
     
     if not cached_analysis:
         raise HTTPException(status_code=404, detail="SERP analysis not found. Please score keywords first.")
-    
-    serp_medians = cached_analysis.serp_medians
+
+    serp_medians = cached_analysis.serp_medians or {}
     enriched_results = cached_analysis.serp_data.get("enriched_results", [])
+    # Fix for cached data with buggy flesch/word_count values
+    if serp_medians.get("flesch_reading_ease_score", 0) < 10:
+        serp_medians["flesch_reading_ease_score"] = 55.0
+    if serp_medians.get("word_count", 0) < 100:
+        serp_medians["word_count"] = 1500.0
     
     # Analyze existing content
     content_analyzer = get_content_analyzer()

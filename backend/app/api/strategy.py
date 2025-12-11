@@ -256,8 +256,13 @@ def score_keywords(
             
             if cached_analysis:
                 # Use cached data
-                serp_medians = cached_analysis.serp_medians
+                serp_medians = cached_analysis.serp_medians or {}
                 enriched_results = cached_analysis.serp_data.get("enriched_results", [])
+                # Fix for cached data with buggy flesch/word_count values
+                if serp_medians.get("flesch_reading_ease_score", 0) < 10:
+                    serp_medians["flesch_reading_ease_score"] = 55.0
+                if serp_medians.get("word_count", 0) < 100:
+                    serp_medians["word_count"] = 1500.0
             else:
                 # Fetch fresh SERP data (limit to top 10 for speed)
                 serp_data = serp_service.fetch_serp_data(keyword, num_results=10)
@@ -575,8 +580,13 @@ def score_selected_keywords(
             ).order_by(KeywordAnalysis.analyzed_at.desc()).first()
 
             if cached_analysis:
-                serp_medians = cached_analysis.serp_medians
+                serp_medians = cached_analysis.serp_medians or {}
                 enriched_results = cached_analysis.serp_data.get("enriched_results", [])
+                # Fix for cached data with buggy flesch/word_count values
+                if serp_medians.get("flesch_reading_ease_score", 0) < 10:
+                    serp_medians["flesch_reading_ease_score"] = 55.0
+                if serp_medians.get("word_count", 0) < 100:
+                    serp_medians["word_count"] = 1500.0
             else:
                 serp_data = serp_service.fetch_serp_data(keyword, num_results=10)
                 organic_results = serp_service.extract_organic_results(serp_data)
