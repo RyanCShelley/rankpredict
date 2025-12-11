@@ -119,16 +119,10 @@ const StrategyDashboard = () => {
 
     try {
       const keywordIds = Array.from(selectedForScoring);
-      const data = await strategyAPI.scoreSelectedKeywords(selectedList.id, keywordIds);
+      await strategyAPI.scoreSelectedKeywords(selectedList.id, keywordIds);
 
-      // Merge scored keywords into existing list
-      setSelectedList(prev => {
-        const scoredMap = new Map(data.keywords.map(k => [k.id, k]));
-        return {
-          ...prev,
-          keywords: prev.keywords.map(k => scoredMap.get(k.id) || k)
-        };
-      });
+      // Reload the full list to get all updated data
+      await loadList(selectedList.id);
 
       // Clear selection after scoring
       setSelectedForScoring(new Set());
