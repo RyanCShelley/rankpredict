@@ -60,6 +60,37 @@ def get_referring_domains(url: str, seranking_key: str) -> float:
         return np.nan
 
 
+def count_syllables(word: str) -> int:
+    """
+    Count syllables in a word using a simple vowel-based heuristic.
+    More accurate than assuming 1.4 syllables per word.
+    """
+    word = word.lower().strip()
+    if not word:
+        return 0
+
+    vowels = "aeiouy"
+    count = 0
+    prev_was_vowel = False
+
+    for char in word:
+        is_vowel = char in vowels
+        if is_vowel and not prev_was_vowel:
+            count += 1
+        prev_was_vowel = is_vowel
+
+    # Handle silent 'e' at end
+    if word.endswith('e') and count > 1:
+        count -= 1
+
+    # Handle special endings
+    if word.endswith('le') and len(word) > 2 and word[-3] not in vowels:
+        count += 1
+
+    # Minimum 1 syllable per word
+    return max(1, count)
+
+
 def extract_content_features(url: str) -> tuple:
     """
     Extract content features from URL - focuses on MAIN CONTENT only.
@@ -114,18 +145,28 @@ def extract_content_features(url: str) -> tuple:
         text = main_content.get_text(separator=" ")
         text = re.sub(r"\s+", " ", text).strip()
 
-        words = text.split()
+        # Filter to only alphanumeric words (remove punctuation-only tokens)
+        words = [w for w in text.split() if re.search(r'[a-zA-Z]', w)]
         word_count = len(words)
 
         # Sentence count - look for sentence-ending punctuation
         sentence_count = len(re.findall(r'[.!?]+', text))
-        if sentence_count <= 0:
-            sentence_count = 1
+        if sentence_count < 1:
+            sentence_count = max(1, word_count // 15)  # Estimate ~15 words per sentence
 
-        avg_wps = word_count / sentence_count
+        avg_wps = word_count / sentence_count if sentence_count > 0 else 15
 
-        # Flesch Reading Ease (assume ~1.4 syllables/word for speed)
-        flesch = 206.835 - 1.015 * avg_wps - 84.6 * 1.4
+        # Calculate actual syllables per word (sample for performance)
+        sample_size = min(100, word_count)
+        if sample_size > 0:
+            sample_words = words[:sample_size]
+            total_syllables = sum(count_syllables(w) for w in sample_words)
+            avg_syllables_per_word = total_syllables / sample_size
+        else:
+            avg_syllables_per_word = 1.5  # Default fallback
+
+        # Flesch Reading Ease: 206.835 - 1.015*(words/sentences) - 84.6*(syllables/words)
+        flesch = 206.835 - 1.015 * avg_wps - 84.6 * avg_syllables_per_word
         flesch = max(min(flesch, 100), 0)
 
         return word_count, sentence_count, avg_wps, flesch, html
