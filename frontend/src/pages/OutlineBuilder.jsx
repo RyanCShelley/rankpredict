@@ -231,7 +231,7 @@ const OutlineBuilder = () => {
                 <option value="">Select a keyword...</option>
                 {keywords.map(k => (
                   <option key={k.id} value={k.id}>
-                    {k.keyword} ({(k.rankability_score * 100).toFixed(1)}% - {k.opportunity_tier})
+                    {k.keyword} ({(k.rankability_score * 100).toFixed(1)}% win)
                   </option>
                 ))}
               </select>
