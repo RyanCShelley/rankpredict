@@ -93,57 +93,30 @@ def count_syllables(word: str) -> int:
 
 def extract_content_features(url: str) -> tuple:
     """
-    Extract content features from URL - focuses on MAIN CONTENT only.
+    Extract content features from URL using trafilatura for accurate content extraction.
     Returns: word_count, sentence_count, avg_words_per_sentence, flesch_score, html
     """
     try:
-        resp = requests.get(url, timeout=10, headers={
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-        })
-        html = resp.text
+        import trafilatura
 
-        from bs4 import BeautifulSoup
-        soup = BeautifulSoup(html, "lxml")
+        # Fetch URL with trafilatura (better handling of various sites)
+        downloaded = trafilatura.fetch_url(url)
+        if not downloaded:
+            # Fallback to requests if trafilatura fetch fails
+            resp = requests.get(url, timeout=10, headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            })
+            downloaded = resp.text
+            html = resp.text
+        else:
+            html = downloaded
 
-        # Remove non-content elements
-        for tag in soup.find_all(['script', 'style', 'nav', 'header', 'footer',
-                                   'aside', 'noscript', 'iframe', 'form']):
-            tag.decompose()
+        # Extract main content text using trafilatura
+        text = trafilatura.extract(downloaded, include_comments=False, include_tables=True)
 
-        # Remove common non-content class/id patterns
-        for tag in soup.find_all(class_=re.compile(r'(nav|menu|sidebar|footer|header|comment|widget|ad|promo|related|share|social)', re.I)):
-            tag.decompose()
-        for tag in soup.find_all(id=re.compile(r'(nav|menu|sidebar|footer|header|comment|widget|ad|promo|related|share|social)', re.I)):
-            tag.decompose()
-
-        # Try to find main content area
-        main_content = None
-        for selector in ['article', 'main', '[role="main"]', '.post-content',
-                         '.entry-content', '.article-content', '.content', '#content']:
-            if selector.startswith('.') or selector.startswith('#'):
-                # Class or ID selector
-                if selector.startswith('.'):
-                    main_content = soup.find(class_=selector[1:])
-                else:
-                    main_content = soup.find(id=selector[1:])
-            elif selector.startswith('['):
-                # Attribute selector
-                attr_name = selector[1:-1].split('=')[0]
-                attr_val = selector[1:-1].split('=')[1].strip('"')
-                main_content = soup.find(attrs={attr_name: attr_val})
-            else:
-                main_content = soup.find(selector)
-
-            if main_content:
-                break
-
-        # Fall back to body if no main content found
-        if not main_content:
-            main_content = soup.find('body') or soup
-
-        # Extract text from main content only
-        text = main_content.get_text(separator=" ")
-        text = re.sub(r"\s+", " ", text).strip()
+        if not text:
+            # Fallback if trafilatura extraction fails
+            return 0, 0, 0.0, 0.0, html
 
         # Filter to only alphanumeric words (remove punctuation-only tokens)
         words = [w for w in text.split() if re.search(r'[a-zA-Z]', w)]
@@ -170,7 +143,8 @@ def extract_content_features(url: str) -> tuple:
         flesch = max(min(flesch, 100), 0)
 
         return word_count, sentence_count, avg_wps, flesch, html
-    except Exception:
+    except Exception as e:
+        print(f"Error extracting content from {url}: {e}")
         return 0, 0, 0.0, 0.0, ""
 
 

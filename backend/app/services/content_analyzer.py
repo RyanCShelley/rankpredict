@@ -65,29 +65,37 @@ class ContentAnalyzer:
     
     def analyze_existing_content(self, url: str, keyword: str) -> Dict:
         """
-        Analyze existing content at URL
-        
+        Analyze existing content at URL using trafilatura for accurate extraction.
+
         Args:
             url: URL of existing content
             keyword: Target keyword
-            
+
         Returns:
             Dictionary with content metrics
         """
         try:
-            resp = requests.get(url, timeout=10, headers={
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-            })
-            resp.raise_for_status()
-            html = resp.text
-            
-            soup = BeautifulSoup(html, "html.parser")
-            
-            # Extract text
-            for script in soup(["script", "style"]):
-                script.decompose()
-            
-            text = soup.get_text()
+            import trafilatura
+
+            # Fetch URL with trafilatura for better content extraction
+            downloaded = trafilatura.fetch_url(url)
+            if not downloaded:
+                # Fallback to requests
+                resp = requests.get(url, timeout=10, headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                })
+                resp.raise_for_status()
+                downloaded = resp.text
+                html = resp.text
+            else:
+                html = downloaded
+
+            # Extract main content text using trafilatura
+            text = trafilatura.extract(downloaded, include_comments=False, include_tables=True)
+
+            if not text:
+                text = ""  # Will result in 0 word count
+
             # Filter to only alphanumeric words
             words = [w for w in text.split() if any(c.isalpha() for c in w)]
             word_count = len(words)
@@ -111,7 +119,10 @@ class ContentAnalyzer:
             # Calculate Flesch score: 206.835 - 1.015*(words/sentences) - 84.6*(syllables/words)
             flesch_score = 206.835 - 1.015 * avg_sentence_length - 84.6 * avg_syllables_per_word
             flesch_score = max(min(flesch_score, 100), 0)
-            
+
+            # Parse HTML for additional features (links, schema, headings)
+            soup = BeautifulSoup(html, "html.parser")
+
             # Count internal links
             domain = url.split("/")[2] if "/" in url else url
             internal_links = 0
@@ -119,7 +130,7 @@ class ContentAnalyzer:
                 href = link.get("href", "")
                 if href.startswith("/") or domain in href:
                     internal_links += 1
-            
+
             # Extract schema types
             schema_types = []
             schema_scripts = soup.find_all("script", type="application/ld+json")
@@ -138,16 +149,16 @@ class ContentAnalyzer:
                                     schema_types.append(schema_type)
                 except:
                     pass
-            
+
             schema_count = len(schema_types)
             schema_unique = len(set(schema_types))
-            
+
             # Compute semantic score - IMPORTANT: This should be between 0 and 1
             semantic_score = self.semantic_service.compute_semantic_score(keyword, html)
             # Ensure it's a valid score (not 1.0 by default)
             if semantic_score >= 1.0:
                 semantic_score = 0.7  # Default reasonable score if calculation seems off
-            
+
             # Extract H2 headings
             h2_headings = [h2.get_text(strip=True) for h2 in soup.find_all("h2")]
 
