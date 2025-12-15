@@ -141,6 +141,7 @@ class OutlineResponse(BaseModel):
     optimization_mode: bool = False
     existing_url: Optional[str] = None
     content_annotations: List[ContentAnnotation] = []
+    improvement_plan: Optional[Dict[str, Any]] = None
 
 
 class ImprovementPlanResponse(BaseModel):

@@ -147,8 +147,11 @@ const OutlineBuilder = () => {
         loadSavedBriefs(selectedProjectId);
       }
 
-      // If existing content, also fetch improvement plan
-      if (contentType === 'existing' && existingUrl) {
+      // Set improvement plan from response if available (works for both URL and pasted content)
+      if (data.improvement_plan) {
+        setImprovementPlan(data.improvement_plan);
+      } else if (contentType === 'existing' && existingUrl) {
+        // Fallback: fetch improvement plan via separate API call if not in response (URL-based only)
         try {
           const plan = await outlineAPI.getImprovementPlan(selectedKeywordId, existingUrl);
           setImprovementPlan(plan);

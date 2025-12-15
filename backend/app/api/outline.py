@@ -264,7 +264,8 @@ def generate_outline(
         # Existing content optimization fields
         "optimization_mode": outline_data.get("optimization_mode", False),
         "existing_url": outline_data.get("existing_url"),
-        "content_annotations": outline_data.get("content_annotations", [])
+        "content_annotations": outline_data.get("content_annotations", []),
+        "improvement_plan": improvement_plan
     }
 
     # Save outline to database with full brief data
@@ -308,7 +309,8 @@ def generate_outline(
         # Existing content optimization fields
         optimization_mode=brief_data.get("optimization_mode", False),
         existing_url=brief_data.get("existing_url"),
-        content_annotations=brief_data.get("content_annotations", [])
+        content_annotations=brief_data.get("content_annotations", []),
+        improvement_plan=improvement_plan
     )
 
 
@@ -419,7 +421,11 @@ def get_saved_brief(brief_id: int, db: Session = Depends(get_db)):
             related_topics=brief.get("related_topics", []),
             serp_optimization=brief.get("serp_optimization"),
             competitive_gaps=brief.get("competitive_gaps"),
-            serp_features=brief.get("serp_features")
+            serp_features=brief.get("serp_features"),
+            optimization_mode=brief.get("optimization_mode", False),
+            existing_url=brief.get("existing_url"),
+            content_annotations=brief.get("content_annotations", []),
+            improvement_plan=brief.get("improvement_plan") or outline.improvement_plan
         )
     else:
         # Legacy brief without brief_data - reconstruct from outline_structure
@@ -444,7 +450,8 @@ def get_saved_brief(brief_id: int, db: Session = Depends(get_db)):
             related_topics=outline_data.get("related_topics", []),
             serp_optimization=outline_data.get("serp_optimization"),
             competitive_gaps=outline_data.get("competitive_gaps"),
-            serp_features=None
+            serp_features=None,
+            improvement_plan=outline.improvement_plan
         )
 
 
