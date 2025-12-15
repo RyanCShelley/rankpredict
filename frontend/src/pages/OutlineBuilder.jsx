@@ -8,6 +8,8 @@ const OutlineBuilder = () => {
   const [selectedKeywordId, setSelectedKeywordId] = useState(null);
   const [contentType, setContentType] = useState('new');
   const [existingUrl, setExistingUrl] = useState('');
+  const [existingInputType, setExistingInputType] = useState('url'); // 'url' or 'text'
+  const [existingContent, setExistingContent] = useState(''); // for pasted text
   const [targetIntent, setTargetIntent] = useState(''); // '' means auto-detect from SERP
   const [outline, setOutline] = useState(null);
   const [improvementPlan, setImprovementPlan] = useState(null);
@@ -114,9 +116,15 @@ const OutlineBuilder = () => {
       return;
     }
 
-    if (contentType === 'existing' && !existingUrl.trim()) {
-      setError('Please enter the URL of existing content');
-      return;
+    if (contentType === 'existing') {
+      if (existingInputType === 'url' && !existingUrl.trim()) {
+        setError('Please enter the URL of existing content');
+        return;
+      }
+      if (existingInputType === 'text' && !existingContent.trim()) {
+        setError('Please paste your existing content');
+        return;
+      }
     }
 
     setLoading(true);
@@ -128,8 +136,9 @@ const OutlineBuilder = () => {
       const data = await outlineAPI.generateOutline(
         selectedKeywordId,
         contentType,
-        contentType === 'existing' ? existingUrl : null,
-        targetIntent || null // null means auto-detect from SERP
+        contentType === 'existing' && existingInputType === 'url' ? existingUrl : null,
+        targetIntent || null, // null means auto-detect from SERP
+        contentType === 'existing' && existingInputType === 'text' ? existingContent : null
       );
       setOutline(data);
 
@@ -292,17 +301,65 @@ const OutlineBuilder = () => {
           </div>
 
           {contentType === 'existing' && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Existing Content URL
-              </label>
-              <input
-                type="url"
-                value={existingUrl}
-                onChange={(e) => setExistingUrl(e.target.value)}
-                placeholder="https://example.com/page"
-                className="w-full px-3 py-2 border border-gray-300 rounded-md"
-              />
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Content Source
+                </label>
+                <div className="flex gap-4">
+                  <label className="flex items-center">
+                    <input
+                      type="radio"
+                      value="url"
+                      checked={existingInputType === 'url'}
+                      onChange={(e) => setExistingInputType(e.target.value)}
+                      className="mr-2"
+                    />
+                    URL (scrape from web)
+                  </label>
+                  <label className="flex items-center">
+                    <input
+                      type="radio"
+                      value="text"
+                      checked={existingInputType === 'text'}
+                      onChange={(e) => setExistingInputType(e.target.value)}
+                      className="mr-2"
+                    />
+                    Paste Content
+                  </label>
+                </div>
+              </div>
+
+              {existingInputType === 'url' ? (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Existing Content URL
+                  </label>
+                  <input
+                    type="url"
+                    value={existingUrl}
+                    onChange={(e) => setExistingUrl(e.target.value)}
+                    placeholder="https://example.com/page"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                  />
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Paste Your Existing Content
+                  </label>
+                  <textarea
+                    value={existingContent}
+                    onChange={(e) => setExistingContent(e.target.value)}
+                    placeholder="Paste your existing page content here (HTML or plain text)..."
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md min-h-[200px] font-mono text-sm"
+                    rows={10}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Paste the full content of your page - can be HTML or plain text
+                  </p>
+                </div>
+              )}
             </div>
           )}
 

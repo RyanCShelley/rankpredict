@@ -549,7 +549,17 @@ Return ONLY valid JSON, no markdown code blocks or other formatting."""
         # Page content for annotation
         page_text = existing_content.get("page_text", "")[:5000]
 
+        # Detect existing page elements to avoid redundant recommendations
+        existing_elements = self._detect_existing_page_elements(existing_content)
+        existing_elements_context = "\n".join([f"- {elem}" for elem in existing_elements]) if existing_elements else "None detected"
+
         prompt = f"""You are a senior SEO content strategist. Analyze this EXISTING content and create a detailed optimization plan to improve rankings.
+
+## CRITICAL: DO NOT RECOMMEND ELEMENTS THAT ALREADY EXIST
+The following elements have been DETECTED on the page. DO NOT recommend adding these - mark them as MAINTAIN instead:
+{existing_elements_context}
+
+If an element already exists on the page (like FAQ section, pricing, case studies, statistics, testimonials, etc.), your recommendation should be "MAINTAIN" - not "ADD". Only recommend adding elements that are genuinely MISSING from the current page.
 
 ## IMPORTANT: SERVICE SCOPE CONSTRAINTS
 All recommendations MUST be limited to services we actually provide. DO NOT recommend:
@@ -583,6 +593,9 @@ ONLY recommend actions within these service areas:
 
 **Current H2 Headings:**
 {h2_context}
+
+**Existing Elements Detected (DO NOT recommend adding these):**
+{existing_elements_context}
 
 **Current Page Content (excerpt):**
 {page_text[:3000]}
@@ -742,6 +755,85 @@ Return ONLY valid JSON, no markdown code blocks."""
                 "serp_features": serp_features or {},
                 "intent_analysis": {"intent_type": "optimization"}
             }
+
+
+    def _detect_existing_page_elements(self, existing_content: Optional[Dict]) -> List[str]:
+        """
+        Detect existing page elements to avoid redundant recommendations.
+        Analyzes the page content and headings to identify what's already present.
+        """
+        if not existing_content:
+            return []
+
+        detected_elements = []
+        page_text = existing_content.get("page_text", "").lower()
+        h2_headings = [h.lower() for h in existing_content.get("h2_headings", [])]
+        raw_html = existing_content.get("raw_html", "").lower()
+
+        # Check for FAQ section
+        faq_indicators = ["faq", "frequently asked", "common questions", "questions and answers"]
+        if any(ind in page_text for ind in faq_indicators) or any(ind in h for h in h2_headings for ind in faq_indicators):
+            detected_elements.append("FAQ section (already exists)")
+
+        # Check for pricing/packages
+        pricing_indicators = ["pricing", "price", "packages", "plans", "cost", "rates", "fees", "$", "per month", "/month", "starting at"]
+        if any(ind in page_text for ind in pricing_indicators):
+            detected_elements.append("Pricing/packages information (already exists)")
+
+        # Check for case studies
+        case_study_indicators = ["case study", "case studies", "success story", "success stories", "client results", "results we've achieved", "our work"]
+        if any(ind in page_text for ind in case_study_indicators) or any(ind in h for h in h2_headings for ind in case_study_indicators):
+            detected_elements.append("Case studies section (already exists)")
+
+        # Check for statistics/data
+        stats_indicators = ["statistics", "stats", "data", "numbers", "metrics", "results", "%", "percent", "increased", "improved", "growth"]
+        # Look for percentage patterns
+        import re
+        percentage_pattern = r'\d+%|\d+\s*percent'
+        if re.search(percentage_pattern, page_text) or any(ind in page_text for ind in stats_indicators):
+            detected_elements.append("Statistics/data points (already exists)")
+
+        # Check for testimonials/reviews
+        testimonial_indicators = ["testimonial", "testimonials", "review", "reviews", "what our clients say", "client feedback", "what people say", "customer says"]
+        if any(ind in page_text for ind in testimonial_indicators) or any(ind in h for h in h2_headings for ind in testimonial_indicators):
+            detected_elements.append("Testimonials/reviews section (already exists)")
+
+        # Check for process/how we work
+        process_indicators = ["our process", "how we work", "how it works", "our approach", "methodology", "steps", "process"]
+        if any(ind in page_text for ind in process_indicators) or any(ind in h for h in h2_headings for ind in process_indicators):
+            detected_elements.append("Process/methodology section (already exists)")
+
+        # Check for team/about
+        team_indicators = ["our team", "meet the team", "about us", "who we are", "our experts"]
+        if any(ind in page_text for ind in team_indicators) or any(ind in h for h in h2_headings for ind in team_indicators):
+            detected_elements.append("Team/About section (already exists)")
+
+        # Check for contact/CTA
+        contact_indicators = ["contact us", "get in touch", "reach out", "schedule a call", "book a consultation", "free consultation", "get started", "request a quote"]
+        if any(ind in page_text for ind in contact_indicators):
+            detected_elements.append("Contact/CTA elements (already exists)")
+
+        # Check for services/features
+        services_indicators = ["our services", "what we offer", "services include", "features", "capabilities", "solutions"]
+        if any(ind in page_text for ind in services_indicators) or any(ind in h for h in h2_headings for ind in services_indicators):
+            detected_elements.append("Services/features section (already exists)")
+
+        # Check for benefits/why choose us
+        benefits_indicators = ["benefits", "why choose us", "why work with us", "advantages", "what makes us different"]
+        if any(ind in page_text for ind in benefits_indicators) or any(ind in h for h in h2_headings for ind in benefits_indicators):
+            detected_elements.append("Benefits/Why Choose Us section (already exists)")
+
+        # Check for schema markup
+        schema_count = existing_content.get("total_schema_types", 0)
+        if schema_count > 0:
+            detected_elements.append(f"Schema markup ({schema_count} types detected)")
+
+        # Check for internal links
+        internal_links = existing_content.get("internal_links", 0)
+        if internal_links >= 5:
+            detected_elements.append(f"Internal links ({internal_links} links detected)")
+
+        return detected_elements
 
 
 def get_outline_service() -> OutlineService:

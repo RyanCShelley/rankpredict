@@ -51,6 +51,10 @@ class GenerateOutlineRequest(BaseModel):
         None,
         description="Desired page intent: 'informational', 'commercial', 'transactional', 'navigational'. If not set, uses SERP-detected intent."
     )
+    existing_content: Optional[str] = Field(
+        None,
+        description="Pasted content text/HTML for analysis when URL is not available"
+    )
 
 
 class ScoreSpecificKeywordsRequest(BaseModel):

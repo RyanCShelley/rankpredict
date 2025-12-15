@@ -735,13 +735,16 @@ const StrategyDashboard = () => {
                   <thead className="bg-gray-50">
                     <tr>
                       <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase w-10">
-                        <input
-                          type="checkbox"
-                          checked={filteredKeywords.length > 0 && filteredKeywords.every(k => selectedForScoring.has(k.id))}
-                          onChange={(e) => e.target.checked ? selectAllForScoring() : clearScoringSelection()}
-                          className="h-4 w-4"
-                          title="Select all for scoring"
-                        />
+                        <div className="flex flex-col items-start gap-1">
+                          <span className="text-xs font-medium text-gray-600 whitespace-nowrap">Select to Score</span>
+                          <input
+                            type="checkbox"
+                            checked={filteredKeywords.length > 0 && filteredKeywords.every(k => selectedForScoring.has(k.id))}
+                            onChange={(e) => e.target.checked ? selectAllForScoring() : clearScoringSelection()}
+                            className="h-4 w-4"
+                            title="Select all for scoring"
+                          />
+                        </div>
                       </th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Keyword</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">

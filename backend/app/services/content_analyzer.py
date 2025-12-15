@@ -225,7 +225,156 @@ class ContentAnalyzer:
                 "url": url,
                 "raw_html": ""
             }
-    
+
+    def analyze_pasted_content(self, content: str, keyword: str) -> Dict:
+        """
+        Analyze pasted content (HTML or plain text) without URL scraping.
+
+        Args:
+            content: Pasted HTML or plain text content
+            keyword: Target keyword
+
+        Returns:
+            Dictionary with content metrics
+        """
+        try:
+            html = content
+            text = None
+
+            # Try to extract text from HTML if it looks like HTML
+            if '<' in content and '>' in content:
+                soup = BeautifulSoup(content, "html.parser")
+
+                # Remove non-content elements
+                for tag in soup.find_all(['script', 'style', 'nav', 'header', 'footer', 'aside', 'noscript']):
+                    tag.decompose()
+
+                # Get text from body or full content
+                body = soup.find('body') or soup
+                text = body.get_text(separator=" ")
+                text = re.sub(r"\s+", " ", text).strip()
+
+                # Extract H2 headings
+                h2_headings = [h2.get_text(strip=True) for h2 in soup.find_all("h2")]
+
+                # Extract title
+                title_tag = soup.find("title")
+                page_title = title_tag.get_text(strip=True) if title_tag else ""
+
+                # Extract H1
+                h1_tag = soup.find("h1")
+                h1_text = h1_tag.get_text(strip=True) if h1_tag else ""
+
+                # Extract meta description
+                meta_desc = ""
+                meta_tag = soup.find("meta", attrs={"name": "description"})
+                if meta_tag:
+                    meta_desc = meta_tag.get("content", "")
+
+                # Extract schema types
+                schema_types = []
+                schema_scripts = soup.find_all("script", type="application/ld+json")
+                for script in schema_scripts:
+                    try:
+                        schema_data = json.loads(script.string)
+                        if isinstance(schema_data, dict):
+                            schema_type = schema_data.get("@type", "")
+                            if schema_type:
+                                schema_types.append(schema_type)
+                        elif isinstance(schema_data, list):
+                            for item in schema_data:
+                                if isinstance(item, dict):
+                                    schema_type = item.get("@type", "")
+                                    if schema_type:
+                                        schema_types.append(schema_type)
+                    except:
+                        pass
+
+                # Count internal links (relative links)
+                internal_links = 0
+                for link in soup.find_all("a", href=True):
+                    href = link.get("href", "")
+                    if href.startswith("/"):
+                        internal_links += 1
+            else:
+                # Plain text - no HTML parsing
+                text = re.sub(r"\s+", " ", content).strip()
+                h2_headings = []
+                page_title = ""
+                h1_text = ""
+                meta_desc = ""
+                schema_types = []
+                internal_links = 0
+
+            if not text:
+                text = content  # Fallback to raw content
+
+            # Filter to only alphanumeric words
+            words = [w for w in text.split() if any(c.isalpha() for c in w)]
+            word_count = len(words)
+
+            # Count sentences
+            sentence_count = len(re.findall(r'[.!?]+', text))
+            if sentence_count < 1:
+                sentence_count = max(1, word_count // 15)
+
+            avg_sentence_length = word_count / sentence_count if sentence_count > 0 else 15
+
+            # Calculate syllables per word
+            sample_size = min(100, word_count)
+            if sample_size > 0:
+                sample_words = words[:sample_size]
+                total_syllables = sum(count_syllables(w) for w in sample_words)
+                avg_syllables_per_word = total_syllables / sample_size
+            else:
+                avg_syllables_per_word = 1.5
+
+            # Calculate Flesch score
+            flesch_score = 206.835 - 1.015 * avg_sentence_length - 84.6 * avg_syllables_per_word
+            flesch_score = max(min(flesch_score, 100), 0)
+
+            # Compute semantic score
+            semantic_score = self.semantic_service.compute_semantic_score(keyword, html)
+            if semantic_score >= 1.0:
+                semantic_score = 0.7
+
+            schema_count = len(schema_types)
+            schema_unique = len(set(schema_types))
+
+            return {
+                "word_count": word_count,
+                "sentence_count": sentence_count,
+                "average_words_per_sentence": avg_sentence_length,
+                "flesch_reading_ease_score": flesch_score,
+                "internal_links": internal_links,
+                "total_schema_types": schema_count,
+                "unique_schema_types": schema_unique,
+                "semantic_topic_score": semantic_score,
+                "h2_headings": h2_headings,
+                "url": "(pasted content)",
+                "raw_html": html,
+                "page_text": text,
+                "page_title": page_title,
+                "h1": h1_text,
+                "meta_description": meta_desc
+            }
+        except Exception as e:
+            print(f"Error analyzing pasted content: {e}")
+            return {
+                "word_count": 0,
+                "sentence_count": 0,
+                "average_words_per_sentence": 0,
+                "flesch_reading_ease_score": 0,
+                "internal_links": 0,
+                "total_schema_types": 0,
+                "unique_schema_types": 0,
+                "semantic_topic_score": 0,
+                "h2_headings": [],
+                "url": "(pasted content)",
+                "raw_html": content,
+                "page_text": content
+            }
+
     def compare_against_serp(
         self,
         current_content: Dict,
