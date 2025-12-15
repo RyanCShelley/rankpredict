@@ -880,11 +880,14 @@ def export_brief_pdf(brief_id: int, db: Session = Depends(get_db)):
         )
     except Exception as e:
         import traceback
+        import sys
         error_detail = f"Error generating PDF: {str(e)}"
-        print(error_detail)
+        print(error_detail, file=sys.stderr)
         traceback.print_exc()
+        # Include more detail in the response for debugging
+        tb_str = traceback.format_exc()
         raise HTTPException(
             status_code=500,
-            detail=error_detail
+            detail=f"{error_detail}\n\nTraceback:\n{tb_str}"
         )
 
