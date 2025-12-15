@@ -584,60 +584,66 @@ def export_brief_pdf(brief_id: int, db: Session = Depends(get_db)):
             elements.append(Spacer(1, 8))
 
         # === CONTENT STRATEGY SECTION ===
-        content_strategy = brief.get("content_strategy", {})
+        content_strategy = brief.get("content_strategy") or {}
         if content_strategy:
             elements.append(Paragraph("Content Strategy", heading_style))
 
-        # Word count
-        if brief.get("optimization_mode") and content_strategy.get("word_count_current"):
-            wc_current = content_strategy.get("word_count_current", 0)
-            wc_target = content_strategy.get("word_count_target", 0)
-            wc_action = content_strategy.get("word_count_action", "MAINTAIN")
-            elements.append(Paragraph(
-                f"<b>Word Count:</b> {wc_current:,} → {wc_target:,} words ({wc_action})",
-                body_style
-            ))
-        elif content_strategy.get("target_word_count") or brief.get("word_count_target"):
-            wc = content_strategy.get("target_word_count") or brief.get("word_count_target", 0)
-            elements.append(Paragraph(f"<b>Target Word Count:</b> {wc:,} words", body_style))
+            # Word count
+            if brief.get("optimization_mode") and content_strategy.get("word_count_current"):
+                try:
+                    wc_current = int(content_strategy.get("word_count_current", 0))
+                    wc_target = int(content_strategy.get("word_count_target", 0))
+                    wc_action = content_strategy.get("word_count_action", "MAINTAIN")
+                    elements.append(Paragraph(
+                        f"<b>Word Count:</b> {wc_current:,} → {wc_target:,} words ({wc_action})",
+                        body_style
+                    ))
+                except (ValueError, TypeError):
+                    pass
+            elif content_strategy.get("target_word_count") or brief.get("word_count_target"):
+                try:
+                    wc = int(content_strategy.get("target_word_count") or brief.get("word_count_target", 0))
+                    elements.append(Paragraph(f"<b>Target Word Count:</b> {wc:,} words", body_style))
+                except (ValueError, TypeError):
+                    pass
 
-        # Readability
-        if brief.get("optimization_mode") and content_strategy.get("readability_current"):
-            read_current = content_strategy.get("readability_current", 0)
-            read_target = content_strategy.get("readability_target", "")
-            read_action = content_strategy.get("readability_action", "MAINTAIN")
-            elements.append(Paragraph(
-                f"<b>Readability (Flesch):</b> {read_current} → {read_target} ({read_action})",
-                body_style
-            ))
-        elif content_strategy.get("readability_target"):
-            elements.append(Paragraph(
-                f"<b>Target Readability:</b> Flesch {content_strategy['readability_target']}",
-                body_style
-            ))
+            # Readability
+            if brief.get("optimization_mode") and content_strategy.get("readability_current"):
+                read_current = content_strategy.get("readability_current", 0)
+                read_target = content_strategy.get("readability_target", "")
+                read_action = content_strategy.get("readability_action", "MAINTAIN")
+                elements.append(Paragraph(
+                    f"<b>Readability (Flesch):</b> {read_current} → {read_target} ({read_action})",
+                    body_style
+                ))
+            elif content_strategy.get("readability_target"):
+                elements.append(Paragraph(
+                    f"<b>Target Readability:</b> Flesch {content_strategy['readability_target']}",
+                    body_style
+                ))
 
-        # Schema types
-        schema_types = content_strategy.get("schema_types", [])
-        if schema_types:
-            elements.append(Paragraph(f"<b>Schema Markup:</b> {', '.join(schema_types)}", body_style))
+            # Schema types
+            schema_types = content_strategy.get("schema_types") or []
+            if schema_types:
+                elements.append(Paragraph(f"<b>Schema Markup:</b> {', '.join(schema_types)}", body_style))
 
-        # Key differentiators
-        key_diffs = content_strategy.get("key_differentiators", [])
-        if key_diffs:
-            elements.append(Paragraph("<b>Key Differentiators:</b>", body_style))
-            for diff in key_diffs:
-                elements.append(Paragraph(f"• {safe_text(diff)}", bullet_style))
+            # Key differentiators
+            key_diffs = content_strategy.get("key_differentiators") or []
+            if key_diffs:
+                elements.append(Paragraph("<b>Key Differentiators:</b>", body_style))
+                for diff in key_diffs:
+                    elements.append(Paragraph(f"• {safe_text(diff)}", bullet_style))
 
-        elements.append(Spacer(1, 8))
+            elements.append(Spacer(1, 8))
 
         # === SERP FEATURES SECTION ===
-        serp_features = brief.get("serp_features", {})
+        serp_features = brief.get("serp_features") or {}
         if serp_features:
-            features_present = serp_features.get("serp_features_present", [])
+            features_present = serp_features.get("serp_features_present") or []
             if features_present:
                 elements.append(Paragraph("SERP Features Present", heading_style))
-            features_text = ", ".join([f.replace("_", " ").title() for f in features_present])
-            elements.append(Paragraph(features_text, body_style))
+                features_text = ", ".join([f.replace("_", " ").title() for f in features_present])
+                elements.append(Paragraph(features_text, body_style))
 
             # Featured snippet
             featured_snippet = serp_features.get("featured_snippet")
@@ -647,7 +653,9 @@ def export_brief_pdf(brief_id: int, db: Session = Depends(get_db)):
                     f"Type: {featured_snippet.get('type', 'paragraph')}",
                     body_style
                 ))
-            elements.append(Spacer(1, 8))
+
+            if features_present or featured_snippet:
+                elements.append(Spacer(1, 8))
 
         # === PEOPLE ALSO ASK SECTION ===
         paa = serp_features.get("people_also_ask", []) if serp_features else []
