@@ -705,14 +705,13 @@ def export_brief_pdf(brief_id: int, db: Session = Depends(get_db)):
             elements.append(Paragraph("Questions to Answer", heading_style))
             for q in questions:
                 if isinstance(q, dict):
-                question = q.get("question", str(q))
-                priority = q.get("priority", "")
-                format_type = q.get("format", "")
-                placement = q.get("placement", "")
-                q_text = f"• {safe_text(question)}"
-                if priority or format_type:
-                    q_text += f" <i>({priority}{', ' + format_type if format_type else ''})</i>"
-                        elements.append(Paragraph(q_text, bullet_style))
+                    question = q.get("question", str(q))
+                    priority = q.get("priority", "")
+                    format_type = q.get("format", "")
+                    q_text = f"• {safe_text(question)}"
+                    if priority or format_type:
+                        q_text += f" <i>({priority}{', ' + format_type if format_type else ''})</i>"
+                    elements.append(Paragraph(q_text, bullet_style))
                 else:
                     elements.append(Paragraph(f"• {safe_text(str(q))}", bullet_style))
             elements.append(Spacer(1, 8))
@@ -724,34 +723,34 @@ def export_brief_pdf(brief_id: int, db: Session = Depends(get_db)):
             elements.append(Paragraph(outline_title, heading_style))
 
             for i, section in enumerate(sections, 1):
-            heading = section.get("heading", f"Section {i}")
-            status = section.get("status", "")
-            wc_target = section.get("word_count_target", 0)
+                heading = section.get("heading", f"Section {i}")
+                status = section.get("status", "")
+                wc_target = section.get("word_count_target", 0)
 
-            # Section heading with status
-            heading_text = f"<b>{i}. {safe_text(heading)}</b>"
-            if status:
-                heading_text += f" <i>[{status}]</i>"
-            if wc_target:
-                heading_text += f" ({wc_target:,} words)"
-            elements.append(Paragraph(heading_text, subheading_style))
+                # Section heading with status
+                heading_text = f"<b>{i}. {safe_text(heading)}</b>"
+                if status:
+                    heading_text += f" <i>[{status}]</i>"
+                if wc_target:
+                    heading_text += f" ({wc_target:,} words)"
+                elements.append(Paragraph(heading_text, subheading_style))
 
-            # Semantic focus / description
-            semantic_focus = section.get("semantic_focus", "")
-            if semantic_focus:
-                elements.append(Paragraph(f"<i>{safe_text(semantic_focus)}</i>", body_style))
+                # Semantic focus / description
+                semantic_focus = section.get("semantic_focus", "")
+                if semantic_focus:
+                    elements.append(Paragraph(f"<i>{safe_text(semantic_focus)}</i>", body_style))
 
-            # Subsections (H3s)
-            h3s = section.get("h3_subsections", [])
-            if h3s:
-                for h3 in h3s:
-                    h3_text = h3.get("heading", str(h3)) if isinstance(h3, dict) else str(h3)
-                    elements.append(Paragraph(f"  → {safe_text(h3_text)}", bullet_style))
+                # Subsections (H3s)
+                h3s = section.get("h3_subsections", [])
+                if h3s:
+                    for h3 in h3s:
+                        h3_text = h3.get("heading", str(h3)) if isinstance(h3, dict) else str(h3)
+                        elements.append(Paragraph(f"  → {safe_text(h3_text)}", bullet_style))
 
-            # Key points
-            key_points = section.get("key_points", [])
-            if key_points:
-                for point in key_points:
+                # Key points
+                key_points = section.get("key_points", [])
+                if key_points:
+                    for point in key_points:
                         elements.append(Paragraph(f"    • {safe_text(point)}", bullet_style))
 
                 elements.append(Spacer(1, 6))
