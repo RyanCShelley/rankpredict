@@ -106,7 +106,21 @@ const OutlineBuilder = () => {
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
     } catch (err) {
-      setError('Error downloading PDF: ' + (err.response?.data?.detail || err.message));
+      // Handle blob error response
+      let errorMsg = err.message;
+      if (err.response?.data instanceof Blob) {
+        try {
+          const text = await err.response.data.text();
+          const json = JSON.parse(text);
+          errorMsg = json.detail || text;
+        } catch {
+          errorMsg = 'PDF generation failed';
+        }
+      } else if (err.response?.data?.detail) {
+        errorMsg = err.response.data.detail;
+      }
+      console.error('PDF Error:', errorMsg);
+      setError('Error downloading PDF: ' + errorMsg);
     }
   };
 
