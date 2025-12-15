@@ -23,13 +23,26 @@ app.add_middleware(
     expose_headers=["*"],
 )
 
-# Initialize database and preload models on startup
+# Initialize database on startup (fast operation)
+# Model preloading moved to background to avoid blocking healthcheck
 @app.on_event("startup")
 async def startup_event():
-    init_db()
-    print("RankPredict v2 API started")
+    try:
+        init_db()
+        print("RankPredict v2 API started - database initialized")
+    except Exception as e:
+        print(f"Database initialization error: {e}")
+    
+    # Preload models in background task to avoid blocking healthcheck
+    import asyncio
+    asyncio.create_task(preload_models_background())
 
-    # Preload ML model and sentence transformer to avoid cold start delays
+async def preload_models_background():
+    """Preload models in background after server starts"""
+    import asyncio
+    # Give healthcheck time to respond first
+    await asyncio.sleep(2)
+    
     try:
         from app.models.ml_model import model_instance
         if model_instance.model is not None:
@@ -51,8 +64,8 @@ app.include_router(outline.router, prefix="/api/outline", tags=["outline"])
 
 
 @app.get("/health")
-async def health_check():
-    """Health check endpoint"""
+def health_check():
+    """Health check endpoint - synchronous for faster response"""
     return {"status": "healthy", "service": "RankPredict v2 API"}
 
 

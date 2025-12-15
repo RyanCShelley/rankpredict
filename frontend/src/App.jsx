@@ -27,8 +27,8 @@ const Navigation = () => {
       <div className="container mx-auto px-4">
         <div className="flex justify-between items-center h-16">
           <div className="flex items-center space-x-8">
-            <Link to="/" className="text-xl font-bold text-[#223540]">
-              RankPredict v2
+            <Link to="/" className="flex items-center">
+              <img src="/logo.png" alt="RankPredict" className="h-8" />
             </Link>
             <div className="flex space-x-4">
               <Link
