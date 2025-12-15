@@ -695,161 +695,176 @@ def export_brief_pdf(brief_id: int, db: Session = Depends(get_db)):
             elements.append(Spacer(1, 8))
 
         # === CONTENT ANNOTATIONS (for optimization mode) ===
-        annotations = brief.get("content_annotations", [])
+        annotations = brief.get("content_annotations") or []
         if annotations:
             elements.append(Paragraph("Content Improvements Needed", heading_style))
             for i, ann in enumerate(annotations, 1):
-                priority = ann.get("priority", "medium").upper()
-                elements.append(Paragraph(f"<b>{i}. [{priority}]</b>", subheading_style))
-                elements.append(Paragraph(f"<b>Original:</b> {safe_text(ann.get('original_text', ''))}", body_style))
-                elements.append(Paragraph(f"<b>Improved:</b> {safe_text(ann.get('improved_text', ''))}", body_style))
-                elements.append(Paragraph(f"<i>Reason: {safe_text(ann.get('reason', ''))}</i>", body_style))
-                elements.append(Spacer(1, 4))
+                if ann and isinstance(ann, dict):
+                    priority = (ann.get("priority") or "medium").upper()
+                    elements.append(Paragraph(f"<b>{i}. [{priority}]</b>", subheading_style))
+                    elements.append(Paragraph(f"<b>Original:</b> {safe_text(ann.get('original_text', ''))}", body_style))
+                    elements.append(Paragraph(f"<b>Improved:</b> {safe_text(ann.get('improved_text', ''))}", body_style))
+                    elements.append(Paragraph(f"<i>Reason: {safe_text(ann.get('reason', ''))}</i>", body_style))
+                    elements.append(Spacer(1, 4))
             elements.append(Spacer(1, 8))
 
         # === QUESTIONS TO ANSWER SECTION ===
-        questions = brief.get("questions_to_answer", [])
+        questions = brief.get("questions_to_answer") or []
         if questions:
             elements.append(Paragraph("Questions to Answer", heading_style))
             for q in questions:
-                if isinstance(q, dict):
-                    question = q.get("question", str(q))
-                    priority = q.get("priority", "")
-                    format_type = q.get("format", "")
+                if q and isinstance(q, dict):
+                    question = q.get("question") or str(q)
+                    priority = q.get("priority") or ""
+                    format_type = q.get("format") or ""
                     q_text = f"• {safe_text(question)}"
                     if priority or format_type:
                         q_text += f" <i>({priority}{', ' + format_type if format_type else ''})</i>"
                     elements.append(Paragraph(q_text, bullet_style))
-                else:
+                elif q:
                     elements.append(Paragraph(f"• {safe_text(str(q))}", bullet_style))
             elements.append(Spacer(1, 8))
 
         # === CONTENT OUTLINE SECTION ===
-        sections = brief.get("sections", [])
+        sections = brief.get("sections") or []
         if sections:
             outline_title = "Optimized Content Structure" if brief.get("optimization_mode") else "Content Outline"
             elements.append(Paragraph(outline_title, heading_style))
 
             for i, section in enumerate(sections, 1):
-                heading = section.get("heading", f"Section {i}")
-                status = section.get("status", "")
-                wc_target = section.get("word_count_target", 0)
+                if not section or not isinstance(section, dict):
+                    continue
+                heading = section.get("heading") or f"Section {i}"
+                status = section.get("status") or ""
+                wc_target = section.get("word_count_target") or 0
 
                 # Section heading with status
                 heading_text = f"<b>{i}. {safe_text(heading)}</b>"
                 if status:
                     heading_text += f" <i>[{status}]</i>"
                 if wc_target:
-                    heading_text += f" ({wc_target:,} words)"
+                    try:
+                        heading_text += f" ({int(wc_target):,} words)"
+                    except (ValueError, TypeError):
+                        pass
                 elements.append(Paragraph(heading_text, subheading_style))
 
                 # Semantic focus / description
-                semantic_focus = section.get("semantic_focus", "")
+                semantic_focus = section.get("semantic_focus") or ""
                 if semantic_focus:
                     elements.append(Paragraph(f"<i>{safe_text(semantic_focus)}</i>", body_style))
 
                 # Subsections (H3s)
-                h3s = section.get("h3_subsections", [])
+                h3s = section.get("h3_subsections") or []
                 if h3s:
                     for h3 in h3s:
-                        h3_text = h3.get("heading", str(h3)) if isinstance(h3, dict) else str(h3)
-                        elements.append(Paragraph(f"  → {safe_text(h3_text)}", bullet_style))
+                        if h3:
+                            h3_text = h3.get("heading", str(h3)) if isinstance(h3, dict) else str(h3)
+                            elements.append(Paragraph(f"  → {safe_text(h3_text)}", bullet_style))
 
                 # Key points
-                key_points = section.get("key_points", [])
+                key_points = section.get("key_points") or []
                 if key_points:
                     for point in key_points:
-                        elements.append(Paragraph(f"    • {safe_text(point)}", bullet_style))
+                        if point:
+                            elements.append(Paragraph(f"    • {safe_text(point)}", bullet_style))
 
                 elements.append(Spacer(1, 6))
 
             elements.append(Spacer(1, 8))
 
         # === SEMANTIC COVERAGE SECTION ===
-        topics = brief.get("topics", [])
-        related_topics = brief.get("related_topics", [])
-        entities = brief.get("entities", [])
+        topics = brief.get("topics") or []
+        related_topics = brief.get("related_topics") or []
+        entities = brief.get("entities") or []
 
         if topics or related_topics or entities:
             elements.append(Paragraph("Semantic Coverage", heading_style))
 
             if topics:
                 elements.append(Paragraph("<b>Must-Cover Topics:</b>", label_style))
-                elements.append(Paragraph(", ".join([safe_text(t) for t in topics]), body_style))
+                elements.append(Paragraph(", ".join([safe_text(t) for t in topics if t]), body_style))
 
             if related_topics:
                 elements.append(Paragraph("<b>Related Topics:</b>", label_style))
-                elements.append(Paragraph(", ".join([safe_text(t) for t in related_topics]), body_style))
+                elements.append(Paragraph(", ".join([safe_text(t) for t in related_topics if t]), body_style))
 
             if entities:
                 elements.append(Paragraph("<b>Entities to Mention:</b>", label_style))
-                elements.append(Paragraph(", ".join([safe_text(e) for e in entities]), body_style))
+                elements.append(Paragraph(", ".join([safe_text(e) for e in entities if e]), body_style))
 
             elements.append(Spacer(1, 8))
 
         # === SERP OPTIMIZATION SECTION ===
-        serp_opt = brief.get("serp_optimization", {})
+        serp_opt = brief.get("serp_optimization") or {}
         if serp_opt:
             elements.append(Paragraph("SERP Optimization Strategies", heading_style))
 
             if serp_opt.get("featured_snippet_strategy"):
                 elements.append(Paragraph(f"<b>Featured Snippet Strategy:</b> {safe_text(serp_opt['featured_snippet_strategy'])}", body_style))
 
-            faq_questions = serp_opt.get("faq_schema_questions", [])
+            faq_questions = serp_opt.get("faq_schema_questions") or []
             if faq_questions:
                 elements.append(Paragraph("<b>FAQ Schema Questions:</b>", label_style))
                 for faq in faq_questions:
-                    elements.append(Paragraph(f"• {safe_text(faq)}", bullet_style))
+                    if faq:
+                        elements.append(Paragraph(f"• {safe_text(faq)}", bullet_style))
 
-            other_opps = serp_opt.get("other_opportunities", [])
+            other_opps = serp_opt.get("other_opportunities") or []
             if other_opps:
                 elements.append(Paragraph("<b>Other Opportunities:</b>", label_style))
                 for opp in other_opps:
-                    elements.append(Paragraph(f"• {safe_text(opp)}", bullet_style))
+                    if opp:
+                        elements.append(Paragraph(f"• {safe_text(opp)}", bullet_style))
 
             elements.append(Spacer(1, 8))
 
         # === COMPETITIVE GAPS / ACTION SUMMARY SECTION ===
-        comp_gaps = brief.get("competitive_gaps", {})
+        comp_gaps = brief.get("competitive_gaps") or {}
         if comp_gaps:
             section_title = "Action Summary" if brief.get("optimization_mode") else "Competitive Analysis"
             elements.append(Paragraph(section_title, heading_style))
 
             # Quick wins
-            quick_wins = comp_gaps.get("quick_wins", [])
+            quick_wins = comp_gaps.get("quick_wins") or []
             if quick_wins:
                 elements.append(Paragraph("<b>Quick Wins:</b>", label_style))
                 for i, win in enumerate(quick_wins, 1):
-                    elements.append(Paragraph(f"{i}. {safe_text(win)}", bullet_style))
+                    if win:
+                        elements.append(Paragraph(f"{i}. {safe_text(win)}", bullet_style))
 
             # Missing from page (optimization) or competitors (new content)
-            missing = comp_gaps.get("missing_from_page", []) or comp_gaps.get("missing_from_competitors", [])
+            missing = (comp_gaps.get("missing_from_page") or []) or (comp_gaps.get("missing_from_competitors") or [])
             if missing:
                 label = "Missing from Your Page:" if brief.get("optimization_mode") else "Missing from Competitors:"
                 elements.append(Paragraph(f"<b>{label}</b>", label_style))
                 for item in missing:
-                    elements.append(Paragraph(f"• {safe_text(item)}", bullet_style))
+                    if item:
+                        elements.append(Paragraph(f"• {safe_text(item)}", bullet_style))
 
             # Strengths to keep (optimization)
-            strengths = comp_gaps.get("strengths_to_keep", [])
+            strengths = comp_gaps.get("strengths_to_keep") or []
             if strengths:
                 elements.append(Paragraph("<b>Strengths to Keep:</b>", label_style))
                 for item in strengths:
-                    elements.append(Paragraph(f"• {safe_text(item)}", bullet_style))
+                    if item:
+                        elements.append(Paragraph(f"• {safe_text(item)}", bullet_style))
 
             # Unique angles
-            unique_angles = comp_gaps.get("unique_angles", [])
+            unique_angles = comp_gaps.get("unique_angles") or []
             if unique_angles:
                 elements.append(Paragraph("<b>Unique Angles:</b>", label_style))
                 for angle in unique_angles:
-                    elements.append(Paragraph(f"• {safe_text(angle)}", bullet_style))
+                    if angle:
+                        elements.append(Paragraph(f"• {safe_text(angle)}", bullet_style))
 
             # Comprehensiveness improvements
-            comp_improvements = comp_gaps.get("comprehensiveness_improvements", [])
+            comp_improvements = comp_gaps.get("comprehensiveness_improvements") or []
             if comp_improvements:
                 elements.append(Paragraph("<b>Comprehensiveness Improvements:</b>", label_style))
                 for imp in comp_improvements:
-                    elements.append(Paragraph(f"• {safe_text(imp)}", bullet_style))
+                    if imp:
+                        elements.append(Paragraph(f"• {safe_text(imp)}", bullet_style))
 
         doc.build(elements)
 
