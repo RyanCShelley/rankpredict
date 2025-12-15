@@ -675,8 +675,8 @@ def export_brief_pdf(brief_id: int, db: Session = Depends(get_db)):
             elements.append(Spacer(1, 8))
 
         # === INTENT ANALYSIS SECTION ===
-        intent = brief.get("intent_analysis", {})
-        search_intent = brief.get("search_intent", {})
+        intent = brief.get("intent_analysis") or {}
+        search_intent = brief.get("search_intent") or {}
         if intent or search_intent:
             elements.append(Paragraph("Search Intent Analysis", heading_style))
             intent_type = intent.get("intent_type") or search_intent.get("primary_intent", "Unknown")
