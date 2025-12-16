@@ -11,6 +11,7 @@ const OutlineBuilder = () => {
   const [existingInputType, setExistingInputType] = useState('url'); // 'url' or 'text'
   const [existingContent, setExistingContent] = useState(''); // for pasted text
   const [targetIntent, setTargetIntent] = useState(''); // '' means auto-detect from SERP
+  const [forceRefresh, setForceRefresh] = useState(false); // Force fresh SERP data
   const [outline, setOutline] = useState(null);
   const [improvementPlan, setImprovementPlan] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -152,7 +153,8 @@ const OutlineBuilder = () => {
         contentType,
         contentType === 'existing' && existingInputType === 'url' ? existingUrl : null,
         targetIntent || null, // null means auto-detect from SERP
-        contentType === 'existing' && existingInputType === 'text' ? existingContent : null
+        contentType === 'existing' && existingInputType === 'text' ? existingContent : null,
+        forceRefresh
       );
       setOutline(data);
 
@@ -311,6 +313,23 @@ const OutlineBuilder = () => {
             </select>
             <p className="text-xs text-gray-500 mt-1">
               Override SERP-detected intent to create content optimized for a specific page type
+            </p>
+          </div>
+
+          <div>
+            <label className="flex items-center">
+              <input
+                type="checkbox"
+                checked={forceRefresh}
+                onChange={(e) => setForceRefresh(e.target.checked)}
+                className="mr-2"
+              />
+              <span className="text-sm font-medium text-gray-700">
+                Force fresh SERP data (ignore cache)
+              </span>
+            </label>
+            <p className="text-xs text-gray-500 mt-1 ml-6">
+              Fetch fresh SERP results instead of using cached analysis. Use this if you want the latest rankings and metrics.
             </p>
           </div>
 

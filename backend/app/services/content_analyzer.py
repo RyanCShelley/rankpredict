@@ -124,12 +124,10 @@ class ContentAnalyzer:
 
             avg_sentence_length = word_count / sentence_count if sentence_count > 0 else 15
 
-            # Calculate actual syllables per word (sample for performance)
-            sample_size = min(100, word_count)
-            if sample_size > 0:
-                sample_words = words[:sample_size]
-                total_syllables = sum(count_syllables(w) for w in sample_words)
-                avg_syllables_per_word = total_syllables / sample_size
+            # Calculate syllables per word for ALL words (not sampled)
+            if word_count > 0:
+                total_syllables = sum(count_syllables(w) for w in words)
+                avg_syllables_per_word = total_syllables / word_count
             else:
                 avg_syllables_per_word = 1.5  # Default fallback
 
@@ -320,12 +318,10 @@ class ContentAnalyzer:
 
             avg_sentence_length = word_count / sentence_count if sentence_count > 0 else 15
 
-            # Calculate syllables per word
-            sample_size = min(100, word_count)
-            if sample_size > 0:
-                sample_words = words[:sample_size]
-                total_syllables = sum(count_syllables(w) for w in sample_words)
-                avg_syllables_per_word = total_syllables / sample_size
+            # Calculate syllables per word for ALL words (not sampled)
+            if word_count > 0:
+                total_syllables = sum(count_syllables(w) for w in words)
+                avg_syllables_per_word = total_syllables / word_count
             else:
                 avg_syllables_per_word = 1.5
 

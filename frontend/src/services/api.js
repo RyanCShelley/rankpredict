@@ -121,13 +121,14 @@ export const outlineAPI = {
     return response.data;
   },
 
-  generateOutline: async (keywordId, contentType, existingUrl = null, targetIntent = null, existingContent = null) => {
+  generateOutline: async (keywordId, contentType, existingUrl = null, targetIntent = null, existingContent = null, forceRefresh = false) => {
     const response = await api.post('/api/outline/generate', {
       keyword_id: keywordId,
       content_type: contentType,
       existing_url: existingUrl,
       target_intent: targetIntent,
-      existing_content: existingContent
+      existing_content: existingContent,
+      force_refresh: forceRefresh
     });
     return response.data;
   },

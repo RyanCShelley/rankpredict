@@ -88,9 +88,11 @@ def generate_outline(
     keyword = keyword_obj.keyword
 
     # Get or fetch SERP analysis
-    cached_analysis = db.query(KeywordAnalysis).filter(
-        KeywordAnalysis.keyword == keyword
-    ).order_by(KeywordAnalysis.analyzed_at.desc()).first()
+    cached_analysis = None
+    if not request.force_refresh:
+        cached_analysis = db.query(KeywordAnalysis).filter(
+            KeywordAnalysis.keyword == keyword
+        ).order_by(KeywordAnalysis.analyzed_at.desc()).first()
 
     serp_service = get_serp_service()
     semantic_service = get_semantic_service()
@@ -100,25 +102,39 @@ def generate_outline(
     # Track raw SERP data for feature extraction
     raw_serp_data = None
     serp_features = None
+    semantic_scores = None
+    fresh_analysis = None  # Track if we just created a new analysis
 
-    if cached_analysis:
+    if cached_analysis and not request.force_refresh:
         # Use cached data
+        print(f"[OUTLINE] Using CACHED SERP analysis for keyword '{keyword}' (cached at {cached_analysis.analyzed_at})")
         enriched_results = cached_analysis.serp_data.get("enriched_results", [])
         serp_medians = cached_analysis.serp_medians or {}
         # Try to get cached SERP features
         serp_features = cached_analysis.serp_data.get("serp_features", None)
         raw_serp_data = cached_analysis.serp_data.get("raw_serp_data", None)
+        semantic_scores = cached_analysis.semantic_scores
 
         # Fix for cached data with buggy flesch/word_count values
         if serp_medians.get("flesch_reading_ease_score", 0) < 10:
             serp_medians["flesch_reading_ease_score"] = 55.0
+            print(f"[OUTLINE] Fixed cached Flesch score (was < 10, set to 55.0)")
         if serp_medians.get("word_count", 0) < 100:
             serp_medians["word_count"] = 1500.0
+            print(f"[OUTLINE] Fixed cached word count (was < 100, set to 1500)")
     else:
         # Fetch fresh SERP data
+        refresh_reason = "force_refresh=true" if request.force_refresh else "no cache found"
+        print(f"[OUTLINE] Fetching FRESH SERP data for keyword '{keyword}' (reason: {refresh_reason})")
+        
         raw_serp_data = serp_service.fetch_serp_data(keyword)
+        print(f"[OUTLINE] SERP data fetched, extracting organic results...")
+        
         organic_results = serp_service.extract_organic_results(raw_serp_data)
+        print(f"[OUTLINE] Enriching {len(organic_results)} organic results...")
+        
         enriched_results = serp_service.enrich_serp_results(organic_results)
+        print(f"[OUTLINE] Enriched {len(enriched_results)} results, computing semantic scores...")
 
         # Compute semantic scores
         semantic_scores = semantic_service.compute_semantic_scores_for_serp(
@@ -126,6 +142,7 @@ def generate_outline(
             query=keyword,
             html_column="raw_html"
         )
+        print(f"[OUTLINE] Computed {len(semantic_scores)} semantic scores")
 
         for i, score in enumerate(semantic_scores):
             if i < len(enriched_results):
@@ -133,10 +150,35 @@ def generate_outline(
 
         serp_medians = serp_service.calculate_serp_medians(enriched_results)
         serp_medians["semantic_topic_score"] = sum(semantic_scores[:10]) / len(semantic_scores[:10]) if semantic_scores else 0.7
+        
+        print(f"[OUTLINE] SERP medians calculated - Flesch: {serp_medians.get('flesch_reading_ease_score', 0):.1f}, Word count: {serp_medians.get('word_count', 0):.0f}")
+        
+        # Cache the fresh analysis
+        print(f"[OUTLINE] Caching fresh SERP analysis for keyword '{keyword}'")
+        fresh_analysis = KeywordAnalysis(
+            keyword_id=keyword_obj.id,
+            keyword=keyword,
+            serp_data={
+                "enriched_results": enriched_results,
+                "raw_serp_data": raw_serp_data,
+                "serp_features": None  # Will be set below if extracted
+            },
+            serp_medians=serp_medians,
+            semantic_scores=semantic_scores
+        )
+        db.add(fresh_analysis)
+        db.commit()
 
     # Extract SERP features (PAA, related searches, featured snippets, etc.)
     if raw_serp_data and not serp_features:
+        print(f"[OUTLINE] Extracting SERP features (PAA, related searches, etc.)...")
         serp_features = serp_service.extract_serp_features(raw_serp_data)
+        
+        # Update cached analysis with SERP features if we just created it
+        if fresh_analysis:
+            fresh_analysis.serp_data["serp_features"] = serp_features
+            db.commit()
+            print(f"[OUTLINE] Updated cached analysis with SERP features")
     elif not serp_features:
         # If no raw data available, fetch just for features
         try:

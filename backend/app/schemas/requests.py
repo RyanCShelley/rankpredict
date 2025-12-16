@@ -55,6 +55,10 @@ class GenerateOutlineRequest(BaseModel):
         None,
         description="Pasted content text/HTML for analysis when URL is not available"
     )
+    force_refresh: Optional[bool] = Field(
+        False,
+        description="Force fresh SERP data fetch instead of using cached analysis"
+    )
 
 
 class ScoreSpecificKeywordsRequest(BaseModel):
