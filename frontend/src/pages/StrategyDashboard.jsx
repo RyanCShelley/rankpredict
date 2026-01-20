@@ -50,6 +50,8 @@ const StrategyDashboard = () => {
   const [editVertical, setEditVertical] = useState('');
   const [editVerticalKeywords, setEditVerticalKeywords] = useState('');
   const [savingSettings, setSavingSettings] = useState(false);
+  // Score details modal
+  const [detailsKeyword, setDetailsKeyword] = useState(null);
 
   useEffect(() => {
     loadLists();
@@ -786,6 +788,9 @@ const StrategyDashboard = () => {
                       >
                         Action<SortIndicator column="action" />
                       </th>
+                      <th className="px-2 py-2 text-center font-medium text-gray-600 w-16">
+                        Details
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -835,6 +840,18 @@ const StrategyDashboard = () => {
                               <option value="remove">Remove</option>
                             </select>
                           </td>
+                          <td className="px-2 py-1.5 text-center">
+                            {isKeywordScored(keyword) ? (
+                              <button
+                                onClick={() => setDetailsKeyword(keyword)}
+                                className="px-2 py-0.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded text-xs"
+                              >
+                                View
+                              </button>
+                            ) : (
+                              <span className="text-gray-400">-</span>
+                            )}
+                          </td>
                         </tr>
                       );
                     })}
@@ -849,6 +866,118 @@ const StrategyDashboard = () => {
           )}
         </div>
       </div>
+
+      {/* Score Details Modal */}
+      {detailsKeyword && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
+            <div className="flex justify-between items-start mb-4">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Score Details</h3>
+                <p className="text-sm text-gray-600 mt-1">{detailsKeyword.keyword}</p>
+              </div>
+              <button
+                onClick={() => setDetailsKeyword(null)}
+                className="text-gray-400 hover:text-gray-600 text-xl leading-none"
+              >
+                &times;
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {/* Win Rate */}
+              <div className="bg-gray-50 rounded-lg p-4">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-sm font-medium text-gray-700">Win Rate</span>
+                  <span className="text-lg font-bold text-gray-900">
+                    {detailsKeyword.forecast_pct?.toFixed(1) || (detailsKeyword.rankability_score * 100).toFixed(1)}%
+                  </span>
+                </div>
+                <p className="text-xs text-gray-500">
+                  Probability of ranking in Top 10 based on your site's authority vs SERP competition
+                </p>
+                <div className="mt-2 h-2 bg-gray-200 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-blue-500 rounded-full"
+                    style={{ width: `${Math.min(100, detailsKeyword.forecast_pct || (detailsKeyword.rankability_score * 100))}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* Domain Fit */}
+              <div className="bg-gray-50 rounded-lg p-4">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-sm font-medium text-gray-700">Domain Fit</span>
+                  <span className={`text-lg font-bold ${detailsKeyword.domain_fit ? (detailsKeyword.domain_fit.score >= 50 ? 'text-green-600' : 'text-orange-600') : 'text-gray-400'}`}>
+                    {detailsKeyword.domain_fit ? `${detailsKeyword.domain_fit.score.toFixed(1)}%` : 'N/A'}
+                  </span>
+                </div>
+                <p className="text-xs text-gray-500">
+                  {detailsKeyword.domain_fit?.explanation || 'How your domain authority compares to SERP competitors'}
+                </p>
+                {detailsKeyword.domain_fit && (
+                  <div className="mt-2 h-2 bg-gray-200 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full ${detailsKeyword.domain_fit.score >= 50 ? 'bg-green-500' : 'bg-orange-500'}`}
+                      style={{ width: `${Math.min(100, detailsKeyword.domain_fit.score)}%` }}
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Intent Fit */}
+              <div className="bg-gray-50 rounded-lg p-4">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-sm font-medium text-gray-700">Intent Fit</span>
+                  <span className={`text-lg font-bold ${detailsKeyword.intent_fit ? (detailsKeyword.intent_fit.score >= 50 ? 'text-green-600' : 'text-orange-600') : 'text-gray-400'}`}>
+                    {detailsKeyword.intent_fit ? `${detailsKeyword.intent_fit.score.toFixed(1)}%` : 'N/A'}
+                  </span>
+                </div>
+                <p className="text-xs text-gray-500">
+                  {detailsKeyword.intent_fit?.explanation || 'How well the keyword matches your business vertical'}
+                </p>
+                {detailsKeyword.intent_fit && (
+                  <div className="mt-2 h-2 bg-gray-200 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full ${detailsKeyword.intent_fit.score >= 50 ? 'bg-green-500' : 'bg-orange-500'}`}
+                      style={{ width: `${Math.min(100, detailsKeyword.intent_fit.score)}%` }}
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Combined Forecast (if client profile exists) */}
+              {detailsKeyword.client_forecast && (
+                <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-sm font-medium text-blue-700">Combined Forecast</span>
+                    <span className="text-lg font-bold text-blue-900">
+                      {detailsKeyword.client_forecast.score.toFixed(1)}%
+                    </span>
+                  </div>
+                  <p className="text-xs text-blue-600">
+                    {detailsKeyword.client_forecast.recommendation || '40% Win Rate + 35% Domain Fit + 25% Intent Fit'}
+                  </p>
+                  <div className="mt-2">
+                    <span className={`inline-block px-2 py-1 rounded text-xs font-medium ${getTierColor(detailsKeyword.client_forecast.tier)}`}>
+                      {getTierDisplayName(detailsKeyword.client_forecast.tier)}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="mt-6">
+              <button
+                onClick={() => setDetailsKeyword(null)}
+                className="w-full px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-medium"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
