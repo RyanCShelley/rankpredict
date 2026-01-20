@@ -452,7 +452,7 @@ const StrategyDashboard = () => {
   return (
     <div className="container mx-auto px-4 py-6">
       <div className="flex justify-between items-center mb-4">
-        <h1 className="text-2xl font-bold">Strategy Dashboard</h1>
+        <h1 className="text-2xl font-bold">Rank Predict</h1>
         <button
           onClick={() => navigate('/outline')}
           disabled={selectedCount === 0}
