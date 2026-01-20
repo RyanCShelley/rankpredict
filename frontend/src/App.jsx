@@ -33,6 +33,12 @@ const Navigation = () => {
             </Link>
             <div className="flex space-x-4">
               <Link
+                to="/strategy-dev"
+                className="text-gray-700 hover:text-[#223540] px-3 py-2 rounded-md text-sm font-medium"
+              >
+                Strategy Dev
+              </Link>
+              <Link
                 to="/"
                 className="text-gray-700 hover:text-[#223540] px-3 py-2 rounded-md text-sm font-medium"
               >
@@ -43,12 +49,6 @@ const Navigation = () => {
                 className="text-gray-700 hover:text-[#223540] px-3 py-2 rounded-md text-sm font-medium"
               >
                 Outline Builder
-              </Link>
-              <Link
-                to="/strategy-dev"
-                className="text-gray-700 hover:text-[#223540] px-3 py-2 rounded-md text-sm font-medium"
-              >
-                Strategy Dev
               </Link>
               {(user?.role === 'master' || user?.role === 'admin') && (
                 <Link
