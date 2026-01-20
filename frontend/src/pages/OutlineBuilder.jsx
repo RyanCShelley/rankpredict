@@ -262,7 +262,7 @@ const OutlineBuilder = () => {
               </select>
               {selectedProjectId && keywords.length === 0 && (
                 <p className="text-sm text-orange-600 mt-1">
-                  No approved keywords in this project. Approve keywords in Strategy Dashboard first.
+                  No approved keywords in this project. Approve keywords in Rank Predict first.
                 </p>
               )}
             </div>
@@ -1010,7 +1010,7 @@ const OutlineBuilder = () => {
       {keywords.length === 0 && (
         <div className="bg-white rounded-lg shadow p-12 text-center">
           <p className="text-gray-500">
-            No selected keywords found. Go to Strategy Dashboard to select keywords first.
+            No selected keywords found. Go to Rank Predict to select keywords first.
           </p>
         </div>
       )}

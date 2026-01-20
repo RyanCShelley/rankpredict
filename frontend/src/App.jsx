@@ -35,7 +35,7 @@ const Navigation = () => {
                 to="/"
                 className="text-gray-700 hover:text-[#223540] px-3 py-2 rounded-md text-sm font-medium"
               >
-                Strategy Dashboard
+                Rank Predict
               </Link>
               <Link
                 to="/outline"
