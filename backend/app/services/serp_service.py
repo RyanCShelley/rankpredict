@@ -505,6 +505,21 @@ class SERPService:
         }
 
 
+def strip_html_for_storage(enriched_results: List[Dict]) -> List[Dict]:
+    """
+    Strip raw_html from enriched results before database storage.
+    The raw_html is only needed for semantic scoring and schema extraction,
+    which are done before caching. Storing it causes OOM issues due to
+    large payloads (50-500KB per page × 10 results = up to 5MB per insert).
+    """
+    stripped = []
+    for result in enriched_results:
+        # Create a copy without raw_html
+        result_copy = {k: v for k, v in result.items() if k != "raw_html"}
+        stripped.append(result_copy)
+    return stripped
+
+
 def get_serp_service() -> SERPService:
     """Get SERP service instance"""
     return SERPService()

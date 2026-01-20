@@ -8,7 +8,7 @@ from app.database import get_db
 from app.models.database import Keyword, KeywordAnalysis, Outline, KeywordList
 from app.schemas.requests import GenerateOutlineRequest
 from app.schemas.responses import OutlineResponse, ImprovementPlanResponse
-from app.services.serp_service import get_serp_service
+from app.services.serp_service import get_serp_service, strip_html_for_storage
 from app.services.semantic_service import get_semantic_service
 from app.services.intent_service import get_intent_service
 from app.services.outline_service import get_outline_service
@@ -153,13 +153,13 @@ def generate_outline(
         
         print(f"[OUTLINE] SERP medians calculated - Flesch: {serp_medians.get('flesch_reading_ease_score', 0):.1f}, Word count: {serp_medians.get('word_count', 0):.0f}")
         
-        # Cache the fresh analysis
+        # Cache the fresh analysis (strip raw_html to prevent OOM on large inserts)
         print(f"[OUTLINE] Caching fresh SERP analysis for keyword '{keyword}'")
         fresh_analysis = KeywordAnalysis(
             keyword_id=keyword_obj.id,
             keyword=keyword,
             serp_data={
-                "enriched_results": enriched_results,
+                "enriched_results": strip_html_for_storage(enriched_results),
                 "raw_serp_data": raw_serp_data,
                 "serp_features": None  # Will be set below if extracted
             },

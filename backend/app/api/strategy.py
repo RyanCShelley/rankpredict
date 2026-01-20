@@ -12,7 +12,7 @@ from app.schemas.responses import (
     KeywordListResponse, KeywordListDetailResponse, KeywordResponse, ScoreKeywordsResponse,
     FitScore, ClientForecast, ClientProfileResponse
 )
-from app.services.serp_service import get_serp_service
+from app.services.serp_service import get_serp_service, strip_html_for_storage
 from app.services.semantic_service import get_semantic_service
 from app.models.ml_model import get_model
 from app.services.forecast_service import get_forecast_service
@@ -286,11 +286,11 @@ def score_keywords(
                 serp_medians = serp_service.calculate_serp_medians(enriched_results)
                 serp_medians["semantic_topic_score"] = sum(semantic_scores[:10]) / len(semantic_scores[:10]) if semantic_scores else 0.7
                 
-                # Cache analysis
+                # Cache analysis (strip raw_html to prevent OOM on large inserts)
                 analysis = KeywordAnalysis(
                     keyword_id=keyword_obj.id,
                     keyword=keyword,
-                    serp_data={"enriched_results": enriched_results},
+                    serp_data={"enriched_results": strip_html_for_storage(enriched_results)},
                     serp_medians=serp_medians,
                     semantic_scores=semantic_scores
                 )
@@ -605,10 +605,11 @@ def score_selected_keywords(
                 serp_medians = serp_service.calculate_serp_medians(enriched_results)
                 serp_medians["semantic_topic_score"] = sum(semantic_scores[:10]) / len(semantic_scores[:10]) if semantic_scores else 0.7
 
+                # Strip raw_html to prevent OOM on large inserts
                 analysis = KeywordAnalysis(
                     keyword_id=keyword_obj.id,
                     keyword=keyword,
-                    serp_data={"enriched_results": enriched_results},
+                    serp_data={"enriched_results": strip_html_for_storage(enriched_results)},
                     serp_medians=serp_medians,
                     semantic_scores=semantic_scores
                 )
