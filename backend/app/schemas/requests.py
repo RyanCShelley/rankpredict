@@ -38,6 +38,7 @@ class ScoreKeywordsRequest(BaseModel):
 class UpdateKeywordRequest(BaseModel):
     """Request to update a keyword"""
     is_selected: Optional[bool] = None
+    action_status: Optional[str] = Field(None, description="'none', 'approved', 'whole', or 'removed'")
     content_type: Optional[str] = Field(None, description="'new' or 'existing'")
     target_url: Optional[str] = None
 

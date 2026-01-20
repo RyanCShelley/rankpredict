@@ -101,6 +101,11 @@ export const strategyAPI = {
   updateList: async (listId, updates) => {
     const response = await api.patch(`/api/strategy/lists/${listId}`, updates);
     return response.data;
+  },
+
+  fetchVolumes: async (listId) => {
+    const response = await api.post(`/api/strategy/lists/${listId}/fetch-volumes`);
+    return response.data;
   }
 };
 

@@ -23,6 +23,7 @@ class KeywordResponse(BaseModel):
     """Keyword response model"""
     id: int
     keyword: str
+    volume: Optional[int] = Field(None, description="Monthly search volume from Keywords Everywhere")
     rankability_score: float = Field(..., description="Rankability score (0-1)")
     opportunity_tier: str = Field(..., description="T1_GO_NOW, T2_STRATEGIC, T3_LONG_GAME, or T4_NOT_WORTH_IT")
     forecast_pct: Optional[float] = Field(None, description="Forecast percentage (0-100)")
@@ -32,6 +33,7 @@ class KeywordResponse(BaseModel):
     intent_fit: Optional[FitScore] = Field(None, description="IntentFit score - keyword relevance to vertical")
     client_forecast: Optional[ClientForecast] = Field(None, description="Client-specific forecast")
     is_selected: bool
+    action_status: str = Field("none", description="'none', 'approved', 'whole', or 'removed'")
     content_type: str = Field(..., description="'new' or 'existing'")
     target_url: Optional[str] = None
     created_at: datetime

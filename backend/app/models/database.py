@@ -50,9 +50,11 @@ class Keyword(Base):
     id = Column(Integer, primary_key=True, index=True)
     keyword_list_id = Column(Integer, ForeignKey("keyword_lists.id"), nullable=False)
     keyword = Column(String, nullable=False, index=True)
+    volume = Column(Integer, nullable=True)  # Monthly search volume from Keywords Everywhere
     rankability_score = Column(Float, default=0.0)  # 0-1 probability score
     opportunity_tier = Column(String, default="LOW")  # HIGH, MEDIUM, LOW
     is_selected = Column(Boolean, default=False)
+    action_status = Column(String, default="none")  # "none", "approved", "whole", "removed"
     content_type = Column(String, default="new")  # "new" or "existing"
     target_url = Column(String, nullable=True)  # URL for existing content
     # Persisted scoring data

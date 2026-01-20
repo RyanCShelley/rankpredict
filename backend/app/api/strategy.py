@@ -60,6 +60,7 @@ def create_keyword_list(
             KeywordResponse(
                 id=k.id,
                 keyword=k.keyword,
+                volume=k.volume,
                 rankability_score=k.rankability_score,
                 opportunity_tier=k.opportunity_tier,
                 forecast_pct=None,
@@ -68,6 +69,7 @@ def create_keyword_list(
                 intent_fit=None,
                 client_forecast=None,
                 is_selected=k.is_selected,
+                action_status=k.action_status or "none",
                 content_type=k.content_type,
                 target_url=k.target_url,
                 created_at=k.created_at
@@ -149,6 +151,7 @@ def get_keyword_list(list_id: int, db: Session = Depends(get_db)):
         keyword_responses.append(KeywordResponse(
             id=k.id,
             keyword=k.keyword,
+            volume=k.volume,
             rankability_score=k.rankability_score,
             opportunity_tier=k.opportunity_tier,
             forecast_pct=k.rankability_score * 100 if k.rankability_score else None,
@@ -157,6 +160,7 @@ def get_keyword_list(list_id: int, db: Session = Depends(get_db)):
             intent_fit=intent_fit_response,
             client_forecast=client_forecast_response,
             is_selected=k.is_selected,
+            action_status=k.action_status or "none",
             content_type=k.content_type,
             target_url=k.target_url,
             created_at=k.created_at
@@ -232,6 +236,7 @@ def score_keywords(
             keyword_responses.append(KeywordResponse(
                 id=keyword_obj.id,
                 keyword=keyword_obj.keyword,
+                volume=keyword_obj.volume,
                 rankability_score=keyword_obj.rankability_score,
                 opportunity_tier=keyword_obj.opportunity_tier,
                 forecast_pct=keyword_obj.rankability_score * 100 if keyword_obj.rankability_score else None,
@@ -240,6 +245,7 @@ def score_keywords(
                 intent_fit=intent_fit_response,
                 client_forecast=client_forecast_response,
                 is_selected=keyword_obj.is_selected,
+                action_status=keyword_obj.action_status or "none",
                 content_type=keyword_obj.content_type,
                 target_url=keyword_obj.target_url,
                 created_at=keyword_obj.created_at
@@ -365,6 +371,7 @@ def score_keywords(
             keyword_responses.append(KeywordResponse(
                 id=keyword_obj.id,
                 keyword=keyword_obj.keyword,
+                volume=keyword_obj.volume,
                 rankability_score=keyword_obj.rankability_score,
                 opportunity_tier=keyword_obj.opportunity_tier,
                 forecast_pct=forecast.get("forecast_pct", {}).get("baseline_median_pct"),
@@ -373,6 +380,7 @@ def score_keywords(
                 intent_fit=intent_fit_response,
                 client_forecast=client_forecast_response,
                 is_selected=keyword_obj.is_selected,
+                action_status=keyword_obj.action_status or "none",
                 content_type=keyword_obj.content_type,
                 target_url=keyword_obj.target_url,
                 created_at=keyword_obj.created_at
@@ -403,17 +411,20 @@ def update_keyword(
     
     if request.is_selected is not None:
         keyword.is_selected = request.is_selected
+    if request.action_status is not None:
+        keyword.action_status = request.action_status
     if request.content_type is not None:
         keyword.content_type = request.content_type
     if request.target_url is not None:
         keyword.target_url = request.target_url
-    
+
     db.commit()
     db.refresh(keyword)
-    
+
     return KeywordResponse(
         id=keyword.id,
         keyword=keyword.keyword,
+        volume=keyword.volume,
         rankability_score=keyword.rankability_score,
         opportunity_tier=keyword.opportunity_tier,
         forecast_pct=None,
@@ -422,6 +433,7 @@ def update_keyword(
         intent_fit=None,
         client_forecast=None,
         is_selected=keyword.is_selected,
+        action_status=keyword.action_status or "none",
         content_type=keyword.content_type,
         target_url=keyword.target_url,
         created_at=keyword.created_at
@@ -470,6 +482,7 @@ def add_keywords_to_list(
             KeywordResponse(
                 id=k.id,
                 keyword=k.keyword,
+                volume=k.volume,
                 rankability_score=k.rankability_score,
                 opportunity_tier=k.opportunity_tier,
                 forecast_pct=None,
@@ -478,6 +491,7 @@ def add_keywords_to_list(
                 intent_fit=None,
                 client_forecast=None,
                 is_selected=k.is_selected,
+                action_status=k.action_status or "none",
                 content_type=k.content_type,
                 target_url=k.target_url,
                 created_at=k.created_at
@@ -673,6 +687,7 @@ def score_selected_keywords(
             keyword_responses.append(KeywordResponse(
                 id=keyword_obj.id,
                 keyword=keyword_obj.keyword,
+                volume=keyword_obj.volume,
                 rankability_score=keyword_obj.rankability_score,
                 opportunity_tier=keyword_obj.opportunity_tier,
                 forecast_pct=forecast.get("forecast_pct", {}).get("baseline_median_pct"),
@@ -681,6 +696,7 @@ def score_selected_keywords(
                 intent_fit=intent_fit_response,
                 client_forecast=client_forecast_response,
                 is_selected=keyword_obj.is_selected,
+                action_status=keyword_obj.action_status or "none",
                 content_type=keyword_obj.content_type,
                 target_url=keyword_obj.target_url,
                 created_at=keyword_obj.created_at
@@ -718,9 +734,56 @@ def delete_keyword_list(list_id: int, db: Session = Depends(get_db)):
     keyword_list = db.query(KeywordList).filter(KeywordList.id == list_id).first()
     if not keyword_list:
         raise HTTPException(status_code=404, detail="Keyword list not found")
-    
+
     db.delete(keyword_list)
     db.commit()
-    
+
     return {"message": "Keyword list deleted successfully"}
+
+
+@router.post("/lists/{list_id}/fetch-volumes")
+def fetch_keyword_volumes(list_id: int, db: Session = Depends(get_db)):
+    """
+    Fetch search volumes from Keywords Everywhere API for all keywords in a list.
+    Only fetches volumes for keywords that don't already have volume data.
+    """
+    from app.services.keywords_everywhere_service import get_keywords_everywhere_service
+
+    keyword_list = db.query(KeywordList).filter(KeywordList.id == list_id).first()
+    if not keyword_list:
+        raise HTTPException(status_code=404, detail="Keyword list not found")
+
+    # Get keywords that need volume data
+    keywords_needing_volume = [k for k in keyword_list.keywords if k.volume is None]
+
+    if not keywords_needing_volume:
+        return {
+            "message": "All keywords already have volume data",
+            "keywords_updated": 0
+        }
+
+    # Fetch volumes from Keywords Everywhere
+    kwe_service = get_keywords_everywhere_service()
+    keyword_texts = [k.keyword for k in keywords_needing_volume]
+
+    try:
+        volume_data = kwe_service.get_keyword_data(keyword_texts, country="us")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching volumes: {str(e)}")
+
+    # Update keywords with volume data
+    keywords_updated = 0
+    for keyword_obj in keywords_needing_volume:
+        kw_lower = keyword_obj.keyword.lower()
+        if kw_lower in volume_data:
+            keyword_obj.volume = volume_data[kw_lower].get("volume", 0)
+            keywords_updated += 1
+
+    db.commit()
+
+    return {
+        "message": f"Updated volumes for {keywords_updated} keywords",
+        "keywords_updated": keywords_updated,
+        "total_keywords": len(keyword_list.keywords)
+    }
 

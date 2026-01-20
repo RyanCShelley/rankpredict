@@ -20,6 +20,7 @@ SERANKING_KEY = os.getenv("SERANKING_KEY", "")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 HUGGINGFACE_API_KEY = os.getenv("HUGGINGFACE_API_KEY", "")
+KEYWORDS_EVERYWHERE_API_KEY = os.getenv("KEYWORDS_EVERYWHERE_API_KEY", "ac6382c392ef5ae19a73")
 
 # LLM Provider preference: "claude" or "openai" (defaults to claude if available)
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "claude")
