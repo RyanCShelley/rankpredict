@@ -328,6 +328,10 @@ def generate_outline(
     db.commit()
     db.refresh(outline)
 
+    # Auto-update keyword status to "outline_generated"
+    keyword_obj.action_status = "outline_generated"
+    db.commit()
+
     # Return response using brief_data (already built above)
     return OutlineResponse(
         keyword=brief_data["keyword"],

@@ -200,8 +200,8 @@ const StrategyDashboard = () => {
   };
 
   const handleActionChange = async (keywordId, action) => {
-    if (action === 'remove') {
-      if (!window.confirm('Are you sure you want to remove this keyword?')) {
+    if (action === 'delete') {
+      if (!window.confirm('Are you sure you want to delete this keyword?')) {
         return;
       }
       await handleDeleteKeyword(keywordId);
@@ -310,10 +310,11 @@ const StrategyDashboard = () => {
     }
   };
 
-  const getActionColor = (action) => {
-    switch (action) {
+  const getStatusColor = (status) => {
+    switch (status) {
       case 'approved': return 'bg-green-100 text-green-800 border-green-300';
       case 'hold': return 'bg-yellow-100 text-yellow-800 border-yellow-300';
+      case 'outline_generated': return 'bg-purple-100 text-purple-800 border-purple-300';
       default: return 'bg-gray-50 text-gray-600 border-gray-300';
     }
   };
@@ -423,7 +424,7 @@ const StrategyDashboard = () => {
           bVal = b.client_forecast?.score || (b.rankability_score * 100) || 0;
           break;
         case 'action':
-          const actionOrder = { 'approved': 1, 'hold': 2, 'none': 3 };
+          const actionOrder = { 'outline_generated': 1, 'approved': 2, 'hold': 3, 'none': 4 };
           aVal = actionOrder[a.action_status] || 3;
           bVal = actionOrder[b.action_status] || 3;
           break;
@@ -783,10 +784,10 @@ const StrategyDashboard = () => {
                         Forecast<SortIndicator column="forecast" />
                       </th>
                       <th
-                        className="px-2 py-2 text-center font-medium text-gray-600 cursor-pointer hover:bg-gray-100 w-24"
+                        className="px-2 py-2 text-center font-medium text-gray-600 cursor-pointer hover:bg-gray-100 w-28"
                         onClick={() => handleSort('action')}
                       >
-                        Action<SortIndicator column="action" />
+                        Status<SortIndicator column="action" />
                       </th>
                       <th className="px-2 py-2 text-center font-medium text-gray-600 w-16">
                         Details
@@ -832,12 +833,13 @@ const StrategyDashboard = () => {
                             <select
                               value={keyword.action_status || 'none'}
                               onChange={(e) => handleActionChange(keyword.id, e.target.value)}
-                              className={`px-1.5 py-0.5 rounded text-xs border ${getActionColor(keyword.action_status)}`}
+                              className={`px-1.5 py-0.5 rounded text-xs border ${getStatusColor(keyword.action_status)}`}
                             >
                               <option value="none">-</option>
                               <option value="approved">Approved</option>
                               <option value="hold">Hold</option>
-                              <option value="remove">Remove</option>
+                              <option value="outline_generated">Outline Generated</option>
+                              <option value="delete">Delete</option>
                             </select>
                           </td>
                           <td className="px-2 py-1.5 text-center">
