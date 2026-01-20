@@ -3,9 +3,11 @@ Main FastAPI application for RankPredict v2
 """
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import strategy, outline, auth
+from app.api import strategy, outline, auth, strategy_dev
 from app.database import init_db
 from app.config import ALLOWED_ORIGINS
+# Import models to ensure they're registered with Base before create_all
+from app.models import database as models  # noqa: F401
 
 app = FastAPI(
     title="RankPredict v2 API",
@@ -61,6 +63,7 @@ async def preload_models_background():
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(strategy.router, prefix="/api/strategy", tags=["strategy"])
 app.include_router(outline.router, prefix="/api/outline", tags=["outline"])
+app.include_router(strategy_dev.router, prefix="/api/strategy-dev", tags=["strategy-dev"])
 
 
 @app.get("/health")

@@ -117,3 +117,23 @@ def get_keywords_everywhere_service() -> KeywordsEverywhereService:
     if _service_instance is None:
         _service_instance = KeywordsEverywhereService()
     return _service_instance
+
+
+async def fetch_keyword_volumes(keywords: List[str]) -> Dict[str, int]:
+    """
+    Async helper to fetch volumes for a list of keywords.
+
+    Returns:
+        Dict mapping keyword to volume (integer)
+    """
+    service = get_keywords_everywhere_service()
+    data = service.get_keyword_data(keywords)
+
+    # Extract just volumes
+    volumes = {}
+    for kw, info in data.items():
+        vol = info.get("volume", 0)
+        if vol:
+            volumes[kw] = vol
+
+    return volumes

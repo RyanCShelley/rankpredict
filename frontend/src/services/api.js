@@ -170,6 +170,85 @@ export const outlineAPI = {
   }
 };
 
+// Strategy Development API
+export const strategyDevAPI = {
+  // Projects
+  getProjects: async () => {
+    const response = await api.get('/api/strategy-dev/projects');
+    return response.data;
+  },
+
+  createProject: async (name, coreTopics = null) => {
+    const response = await api.post('/api/strategy-dev/projects', {
+      name,
+      core_topics: coreTopics
+    });
+    return response.data;
+  },
+
+  getProject: async (projectId, topicFilter = null, stageFilter = null) => {
+    let url = `/api/strategy-dev/projects/${projectId}`;
+    const params = [];
+    if (topicFilter) params.push(`topic_filter=${encodeURIComponent(topicFilter)}`);
+    if (stageFilter) params.push(`stage_filter=${encodeURIComponent(stageFilter)}`);
+    if (params.length) url += '?' + params.join('&');
+    const response = await api.get(url);
+    return response.data;
+  },
+
+  updateProject: async (projectId, updates) => {
+    const response = await api.put(`/api/strategy-dev/projects/${projectId}`, updates);
+    return response.data;
+  },
+
+  deleteProject: async (projectId) => {
+    const response = await api.delete(`/api/strategy-dev/projects/${projectId}`);
+    return response.data;
+  },
+
+  // GSC
+  getGscAuthUrl: async (projectId) => {
+    const response = await api.get(`/api/strategy-dev/gsc/auth-url?project_id=${projectId}`);
+    return response.data;
+  },
+
+  listGscSites: async (projectId) => {
+    const response = await api.get(`/api/strategy-dev/gsc/sites?project_id=${projectId}`);
+    return response.data;
+  },
+
+  // Sync
+  syncProject: async (projectId) => {
+    const response = await api.post(`/api/strategy-dev/projects/${projectId}/sync`);
+    return response.data;
+  },
+
+  // Export
+  exportKeywordsCsv: async (keywordIds) => {
+    const params = keywordIds.map(id => `keyword_ids=${id}`).join('&');
+    const response = await api.post(`/api/strategy-dev/keywords/export-csv?${params}`, null, {
+      responseType: 'blob'
+    });
+    return response.data;
+  },
+
+  addKeywordsToList: async (keywordIds, listId = null, newListName = null, targetDomainUrl = null) => {
+    const response = await api.post('/api/strategy-dev/keywords/add-to-list', {
+      keyword_ids: keywordIds,
+      list_id: listId,
+      new_list_name: newListName,
+      target_domain_url: targetDomainUrl
+    });
+    return response.data;
+  },
+
+  // Visualization
+  getTopicGraphData: async (projectId, topic) => {
+    const response = await api.get(`/api/strategy-dev/projects/${projectId}/topic-graph?topic=${encodeURIComponent(topic)}`);
+    return response.data;
+  }
+};
+
 // Auth API
 export const authAPI = {
   login: async (username, password) => {

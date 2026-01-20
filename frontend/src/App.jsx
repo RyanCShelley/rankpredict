@@ -2,6 +2,7 @@ import { BrowserRouter as Router, Routes, Route, Link, Navigate } from 'react-ro
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import StrategyDashboard from './pages/StrategyDashboard';
 import OutlineBuilder from './pages/OutlineBuilder';
+import StrategyDev from './pages/StrategyDev';
 import AdminPanel from './pages/AdminPanel';
 import Login from './pages/Login';
 
@@ -42,6 +43,12 @@ const Navigation = () => {
                 className="text-gray-700 hover:text-[#223540] px-3 py-2 rounded-md text-sm font-medium"
               >
                 Outline Builder
+              </Link>
+              <Link
+                to="/strategy-dev"
+                className="text-gray-700 hover:text-[#223540] px-3 py-2 rounded-md text-sm font-medium"
+              >
+                Strategy Dev
               </Link>
               {(user?.role === 'master' || user?.role === 'admin') && (
                 <Link
@@ -88,6 +95,7 @@ function App() {
                     <Routes>
                       <Route path="/" element={<StrategyDashboard />} />
                       <Route path="/outline" element={<OutlineBuilder />} />
+                      <Route path="/strategy-dev" element={<StrategyDev />} />
                       <Route path="/admin" element={<AdminPanel />} />
                     </Routes>
                   </main>

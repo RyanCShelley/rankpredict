@@ -57,3 +57,11 @@ try:
 except (ValueError, TypeError):
     ACCESS_TOKEN_EXPIRE_HOURS = 24
 
+# Google Search Console OAuth
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
+GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/api/strategy-dev/gsc/callback")
+
+# Strategy Development
+TOPIC_SIMILARITY_THRESHOLD = float(os.getenv("TOPIC_SIMILARITY_THRESHOLD", "0.65"))
+

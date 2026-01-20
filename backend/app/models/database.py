@@ -113,3 +113,43 @@ class Outline(Base):
     # Relationships
     keyword = relationship("Keyword", back_populates="outlines")
 
+
+class StrategyProject(Base):
+    """Strategy Development projects with GSC connection"""
+    __tablename__ = "strategy_projects"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    gsc_property_url = Column(String, nullable=True)  # Search Console property URL
+    gsc_refresh_token = Column(String, nullable=True)  # OAuth refresh token (encrypted)
+    core_topics = Column(JSON, nullable=True)  # List of {name: str, keywords: list[str]}
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    # Relationships
+    user = relationship("User")
+    keywords = relationship("StrategyKeyword", back_populates="project", cascade="all, delete-orphan")
+
+
+class StrategyKeyword(Base):
+    """Keywords from GSC with topic and journey classification"""
+    __tablename__ = "strategy_keywords"
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("strategy_projects.id"), nullable=False)
+    query = Column(String, nullable=False, index=True)
+    page_url = Column(String, nullable=True)
+    clicks = Column(Integer, default=0)
+    impressions = Column(Integer, default=0)
+    avg_position = Column(Float, nullable=True)
+    assigned_topic = Column(String, nullable=True)
+    topic_similarity = Column(Float, nullable=True)  # 0-1 cosine similarity
+    buyer_journey_stage = Column(String, nullable=True)  # Decision, Validation, Narrowing, Exploration, Trigger
+    journey_confidence = Column(Float, nullable=True)  # 0-1 confidence score
+    volume = Column(Integer, nullable=True)  # From Keywords Everywhere
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Relationships
+    project = relationship("StrategyProject", back_populates="keywords")
+
