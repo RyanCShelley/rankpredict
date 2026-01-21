@@ -113,32 +113,43 @@ async def list_projects(
     ]
 
 
-@router.post("/projects", response_model=ProjectResponse)
+@router.post("/projects")
 async def create_project(
     request: CreateProjectRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Create a new strategy project."""
-    project = StrategyProject(
-        name=request.name,
-        user_id=current_user.id,
-        core_topics=[t.dict() for t in request.core_topics] if request.core_topics else None
-    )
-    db.add(project)
-    db.commit()
-    db.refresh(project)
+    try:
+        # Convert topics to dict using model_dump (Pydantic v2)
+        topics_data = None
+        if request.core_topics:
+            topics_data = [t.model_dump() for t in request.core_topics]
 
-    return ProjectResponse(
-        id=project.id,
-        name=project.name,
-        gsc_property_url=project.gsc_property_url,
-        gsc_connected=bool(project.gsc_refresh_token),
-        core_topics=project.core_topics,
-        keyword_count=0,
-        created_at=project.created_at,
-        updated_at=project.updated_at
-    )
+        project = StrategyProject(
+            name=request.name,
+            user_id=current_user.id,
+            core_topics=topics_data
+        )
+        db.add(project)
+        db.commit()
+        db.refresh(project)
+
+        return {
+            "id": project.id,
+            "name": project.name,
+            "gsc_property_url": project.gsc_property_url,
+            "gsc_connected": bool(project.gsc_refresh_token),
+            "core_topics": project.core_topics,
+            "keyword_count": 0,
+            "created_at": project.created_at.isoformat() if project.created_at else None,
+            "updated_at": project.updated_at.isoformat() if project.updated_at else None
+        }
+    except Exception as e:
+        import traceback
+        print(f"Error creating project: {e}")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/projects/{project_id}", response_model=ProjectDetailResponse)
@@ -221,7 +232,7 @@ async def update_project(
         project.name = request.name
 
     if request.core_topics is not None:
-        project.core_topics = [t.dict() for t in request.core_topics]
+        project.core_topics = [t.model_dump() for t in request.core_topics]
 
     if request.gsc_property_url is not None:
         project.gsc_property_url = request.gsc_property_url
