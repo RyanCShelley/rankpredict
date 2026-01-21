@@ -444,7 +444,6 @@ async def sync_project(
 
         # Add keywords with classifications
         keywords_added = 0
-        queries_for_volume = []
 
         for row in rows:
             query = row["query"]
@@ -471,15 +470,24 @@ async def sync_project(
             )
             db.add(kw)
             keywords_added += 1
-            queries_for_volume.append(query)
 
         db.commit()
+        print(f"Added {keywords_added} keywords to database")
 
-        # Fetch volumes from Keywords Everywhere
+        # Fetch volumes from Keywords Everywhere (limit to 1000 to avoid timeout)
         volume_data = {}
+        # Get top keywords by clicks for volume fetching
+        top_keywords = db.query(StrategyKeyword).filter(
+            StrategyKeyword.project_id == project_id
+        ).order_by(StrategyKeyword.clicks.desc()).limit(1000).all()
+
+        queries_for_volume = [kw.query for kw in top_keywords]
+        print(f"Fetching volumes for top {len(queries_for_volume)} keywords...")
+
         if queries_for_volume:
             try:
                 volume_data = await fetch_keyword_volumes(queries_for_volume)
+                print(f"Fetched {len(volume_data)} volumes")
             except Exception as e:
                 print(f"Volume fetch error: {e}")
 
