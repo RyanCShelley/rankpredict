@@ -724,9 +724,7 @@ export default function StrategyDev() {
                     {selectedProject.sync_message}
                   </span>
                 </div>
-                  </>
-                )}
-              </div>
+              )}
             </div>
 
             {/* Core Topics Display */}
@@ -835,6 +833,9 @@ export default function StrategyDev() {
                       >
                         Query <SortIcon field="query" />
                       </th>
+                      <th className="text-left px-3 py-3">
+                        Page URL
+                      </th>
                       <th
                         className="text-left px-3 py-3 cursor-pointer hover:bg-gray-100"
                         onClick={() => handleSort('assigned_topic')}
@@ -885,6 +886,21 @@ export default function StrategyDev() {
                           />
                         </td>
                         <td className="px-3 py-2 font-medium">{kw.query}</td>
+                        <td className="px-3 py-2">
+                          {kw.page_url ? (
+                            <a
+                              href={kw.page_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-600 hover:underline text-xs truncate block max-w-[200px]"
+                              title={kw.page_url}
+                            >
+                              {kw.page_url.replace(/^https?:\/\//, '').slice(0, 35)}...
+                            </a>
+                          ) : (
+                            <span className="text-gray-400">-</span>
+                          )}
+                        </td>
                         <td className="px-3 py-2">
                           {kw.assigned_topic && (
                             <span className="text-xs bg-gray-100 px-2 py-1 rounded">
