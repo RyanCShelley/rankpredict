@@ -31,6 +31,12 @@ export default function StrategyDev() {
   const [newProjectName, setNewProjectName] = useState('');
   const [newTopics, setNewTopics] = useState([{ name: '', keywords: '' }]);
 
+  // Edit project form
+  const [showEditProject, setShowEditProject] = useState(false);
+  const [editProjectId, setEditProjectId] = useState(null);
+  const [editProjectName, setEditProjectName] = useState('');
+  const [editTopics, setEditTopics] = useState([{ name: '', keywords: '' }]);
+
   // GSC state
   const [gscSites, setGscSites] = useState([]);
   const [showSiteSelect, setShowSiteSelect] = useState(false);
@@ -201,6 +207,51 @@ export default function StrategyDev() {
     }
   };
 
+  const openEditProject = (project) => {
+    setEditProjectId(project.id);
+    setEditProjectName(project.name);
+    // Convert core_topics to editable format
+    if (project.core_topics && project.core_topics.length > 0) {
+      setEditTopics(project.core_topics.map(t => ({
+        name: t.name || '',
+        keywords: (t.keywords || []).join(', ')
+      })));
+    } else {
+      setEditTopics([{ name: '', keywords: '' }]);
+    }
+    setShowEditProject(true);
+  };
+
+  const handleEditProject = async (e) => {
+    e.preventDefault();
+    if (!editProjectName.trim()) return;
+
+    const topics = editTopics
+      .filter(t => t.name.trim())
+      .map(t => ({
+        name: t.name.trim(),
+        keywords: t.keywords.split(',').map(k => k.trim()).filter(k => k)
+      }));
+
+    try {
+      const updated = await strategyDevAPI.updateProject(editProjectId, {
+        name: editProjectName,
+        core_topics: topics.length ? topics : null
+      });
+      // Update projects list
+      setProjects(projects.map(p => p.id === editProjectId ? { ...p, ...updated } : p));
+      // Update selected project if it's the one being edited
+      if (selectedProject?.id === editProjectId) {
+        setSelectedProject({ ...selectedProject, ...updated });
+      }
+      setShowEditProject(false);
+      loadProjects(); // Refresh to get latest data
+    } catch (err) {
+      console.error('Failed to update project:', err);
+      alert('Failed to update project');
+    }
+  };
+
   // Sorting
   const sortedKeywords = (projectData?.keywords || []).sort((a, b) => {
     let aVal = a[sortField];
@@ -358,12 +409,22 @@ export default function StrategyDev() {
                     {p.gsc_connected && <span className="ml-2 text-green-600">GSC Connected</span>}
                   </div>
                 </div>
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleDeleteProject(p.id); }}
-                  className="text-gray-400 hover:text-red-500 p-1"
-                >
-                  ×
-                </button>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); openEditProject(p); }}
+                    className="text-gray-400 hover:text-blue-500 p-1 text-xs"
+                    title="Edit project"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleDeleteProject(p.id); }}
+                    className="text-gray-400 hover:text-red-500 p-1"
+                    title="Delete project"
+                  >
+                    ×
+                  </button>
+                </div>
               </div>
             </div>
           ))}
@@ -680,6 +741,96 @@ export default function StrategyDev() {
                   className="px-4 py-2 bg-[#223540] text-white rounded hover:bg-[#2d4654]"
                 >
                   Create Project
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Project Modal */}
+      {showEditProject && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg w-full max-w-lg p-6">
+            <h2 className="text-lg font-bold mb-4">Edit Project</h2>
+            <form onSubmit={handleEditProject}>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Project Name
+                </label>
+                <input
+                  type="text"
+                  value={editProjectName}
+                  onChange={(e) => setEditProjectName(e.target.value)}
+                  className="w-full border rounded px-3 py-2"
+                  required
+                />
+              </div>
+
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Core Topics
+                </label>
+                <p className="text-xs text-gray-500 mb-2">
+                  Define topics to classify keywords. Add example keywords for each topic.
+                </p>
+                {editTopics.map((topic, i) => (
+                  <div key={i} className="flex gap-2 mb-2">
+                    <input
+                      type="text"
+                      value={topic.name}
+                      onChange={(e) => {
+                        const next = [...editTopics];
+                        next[i].name = e.target.value;
+                        setEditTopics(next);
+                      }}
+                      className="flex-1 border rounded px-3 py-2 text-sm"
+                      placeholder="Topic name"
+                    />
+                    <input
+                      type="text"
+                      value={topic.keywords}
+                      onChange={(e) => {
+                        const next = [...editTopics];
+                        next[i].keywords = e.target.value;
+                        setEditTopics(next);
+                      }}
+                      className="flex-1 border rounded px-3 py-2 text-sm"
+                      placeholder="Example keywords (comma-separated)"
+                    />
+                    {editTopics.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => setEditTopics(editTopics.filter((_, j) => j !== i))}
+                        className="text-red-500 px-2"
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setEditTopics([...editTopics, { name: '', keywords: '' }])}
+                  className="text-sm text-blue-600 hover:underline"
+                >
+                  + Add Topic
+                </button>
+              </div>
+
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowEditProject(false)}
+                  className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-[#223540] text-white rounded hover:bg-[#2d4654]"
+                >
+                  Save Changes
                 </button>
               </div>
             </form>
