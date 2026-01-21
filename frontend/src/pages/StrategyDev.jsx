@@ -67,6 +67,11 @@ export default function StrategyDev() {
   const [loadingFunnel, setLoadingFunnel] = useState(false);
   const [generatingStage, setGeneratingStage] = useState(null);
 
+  // Bulk actions
+  const [fetchingVolumes, setFetchingVolumes] = useState(false);
+  const [deletingKeywords, setDeletingKeywords] = useState(false);
+  const [fetchingFunnelVolumes, setFetchingFunnelVolumes] = useState(null); // stage id
+
   // Load projects
   useEffect(() => {
     loadProjects();
@@ -95,9 +100,9 @@ export default function StrategyDev() {
     }
   };
 
-  const loadProjectData = useCallback(async () => {
+  const loadProjectData = useCallback(async (showLoading = true) => {
     if (!selectedProject) return;
-    setLoading(true);
+    if (showLoading) setLoading(true);
     try {
       const data = await strategyDevAPI.getProject(
         selectedProject.id,
@@ -105,11 +110,12 @@ export default function StrategyDev() {
         stageFilter || null
       );
       setProjectData(data);
-      setSelectedKeywords(new Set());
+      // Only clear selection on initial load, not refreshes
+      if (showLoading) setSelectedKeywords(new Set());
     } catch (err) {
       console.error('Failed to load project:', err);
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   }, [selectedProject, topicFilter, stageFilter]);
 
@@ -220,18 +226,18 @@ export default function StrategyDev() {
           sync_message: message
         }));
 
+        // Update project data without flashing (background refresh)
+        setProjectData(data);
+
         if (status === 'syncing') {
           // Continue polling
           setTimeout(checkStatus, 2000);
         } else {
           // Sync complete or error
           setSyncing(false);
-          loadProjectData();
           loadProjects(); // Refresh project list
 
-          if (status === 'complete') {
-            // Don't show alert, the status message is visible in the UI
-          } else if (status === 'error') {
+          if (status === 'error') {
             alert('Sync failed: ' + (message || 'Unknown error'));
           }
         }
@@ -243,7 +249,7 @@ export default function StrategyDev() {
 
     // Start polling
     setTimeout(checkStatus, 1000);
-  }, [selectedProject, loadProjectData]);
+  }, [selectedProject]);
 
   const handleDeleteProject = async (projectId) => {
     if (!confirm('Delete this project and all its keywords?')) return;
@@ -411,6 +417,46 @@ export default function StrategyDev() {
     }
   };
 
+  // Delete selected keywords
+  const handleDeleteSelected = async () => {
+    if (selectedKeywords.size === 0) {
+      alert('Select keywords to delete');
+      return;
+    }
+    if (!confirm(`Delete ${selectedKeywords.size} selected keywords?`)) return;
+
+    setDeletingKeywords(true);
+    try {
+      const result = await strategyDevAPI.deleteKeywordsBulk([...selectedKeywords]);
+      alert(result.message);
+      setSelectedKeywords(new Set());
+      loadProjectData(false); // Refresh without flash
+    } catch (err) {
+      console.error('Delete failed:', err);
+      alert('Failed to delete keywords');
+    } finally {
+      setDeletingKeywords(false);
+    }
+  };
+
+  // Fetch volumes for selected keywords (or all if none selected)
+  const handleFetchVolumes = async () => {
+    if (!selectedProject) return;
+
+    setFetchingVolumes(true);
+    try {
+      const keywordIds = selectedKeywords.size > 0 ? [...selectedKeywords] : null;
+      const result = await strategyDevAPI.fetchStrategyVolumes(selectedProject.id, keywordIds);
+      alert(result.message);
+      loadProjectData(false); // Refresh without flash
+    } catch (err) {
+      console.error('Fetch volumes failed:', err);
+      alert('Failed to fetch volumes: ' + (err.response?.data?.detail || err.message));
+    } finally {
+      setFetchingVolumes(false);
+    }
+  };
+
   // Get unique topics from keywords
   const uniqueTopics = [...new Set((projectData?.keywords || []).map(k => k.assigned_topic).filter(Boolean))];
 
@@ -474,12 +520,39 @@ export default function StrategyDev() {
       const result = await strategyDevAPI.generateQueries(selectedProject.id, stage, funnelTopic);
       alert(`Generated ${result.keywords.length} new queries`);
       reloadFunnelData();
-      loadProjectData();
+      loadProjectData(false);
     } catch (err) {
       console.error('Failed to generate queries:', err);
       alert('Failed to generate queries: ' + (err.response?.data?.detail || err.message));
     } finally {
       setGeneratingStage(null);
+    }
+  };
+
+  // Fetch volumes for a funnel stage
+  const handleFetchFunnelVolumes = async (stage) => {
+    if (!selectedProject || !funnelData) return;
+
+    // Get keyword IDs for this stage
+    const stageData = funnelData.stages[stage];
+    if (!stageData || stageData.keywords.length === 0) {
+      alert('No keywords in this stage');
+      return;
+    }
+
+    const keywordIds = stageData.keywords.map(kw => kw.id);
+    setFetchingFunnelVolumes(stage);
+
+    try {
+      const result = await strategyDevAPI.fetchStrategyVolumes(selectedProject.id, keywordIds);
+      alert(result.message);
+      reloadFunnelData();
+      loadProjectData(false);
+    } catch (err) {
+      console.error('Fetch volumes failed:', err);
+      alert('Failed to fetch volumes: ' + (err.response?.data?.detail || err.message));
+    } finally {
+      setFetchingFunnelVolumes(null);
     }
   };
 
@@ -626,18 +699,31 @@ export default function StrategyDev() {
                         >
                           {syncing ? 'Syncing...' : 'Sync Data'}
                         </button>
-                        {syncing && selectedProject.sync_message && (
-                          <span className="text-sm text-blue-600 animate-pulse">
-                            {selectedProject.sync_message}
-                          </span>
-                        )}
-                        {!syncing && selectedProject.sync_status === 'complete' && selectedProject.sync_message && (
-                          <span className="text-sm text-green-600">
-                            {selectedProject.sync_message}
-                          </span>
-                        )}
                       </div>
                     )}
+                  </>
+                )}
+              </div>
+
+              {/* Sync Progress Bar */}
+              {syncing && (
+                <div className="mt-3 w-full max-w-xl">
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 bg-gray-200 rounded-full h-2 overflow-hidden">
+                      <div className="bg-blue-600 h-full rounded-full animate-pulse" style={{ width: '100%' }}></div>
+                    </div>
+                    <span className="text-sm text-blue-600 whitespace-nowrap">
+                      {selectedProject.sync_message || 'Starting sync...'}
+                    </span>
+                  </div>
+                </div>
+              )}
+              {!syncing && selectedProject?.sync_status === 'complete' && selectedProject.sync_message && (
+                <div className="mt-2">
+                  <span className="text-sm text-green-600">
+                    {selectedProject.sync_message}
+                  </span>
+                </div>
                   </>
                 )}
               </div>
@@ -690,9 +776,27 @@ export default function StrategyDev() {
                   <option key={s} value={s}>{s}</option>
                 ))}
               </select>
+              {/* Fetch Volumes Button (always visible) */}
+              <button
+                onClick={handleFetchVolumes}
+                disabled={fetchingVolumes}
+                className="bg-purple-100 text-purple-700 px-3 py-2 rounded text-sm hover:bg-purple-200 disabled:opacity-50"
+              >
+                {fetchingVolumes ? 'Fetching...' : (selectedKeywords.size > 0 ? `Fetch Volumes (${selectedKeywords.size})` : 'Fetch All Volumes')}
+              </button>
+
               <div className="flex-1" />
+
+              {/* Actions for selected keywords */}
               {selectedKeywords.size > 0 && (
                 <div className="flex gap-2">
+                  <button
+                    onClick={handleDeleteSelected}
+                    disabled={deletingKeywords}
+                    className="bg-red-100 text-red-700 px-3 py-2 rounded text-sm hover:bg-red-200 disabled:opacity-50"
+                  >
+                    {deletingKeywords ? 'Deleting...' : `Delete (${selectedKeywords.size})`}
+                  </button>
                   <button
                     onClick={handleExportCsv}
                     className="bg-gray-100 text-gray-700 px-3 py-2 rounded text-sm hover:bg-gray-200"
@@ -1142,7 +1246,9 @@ export default function StrategyDev() {
                 onMoveKeyword={handleMoveKeyword}
                 onDeleteKeyword={handleDeleteFunnelKeyword}
                 onGenerateQueries={handleGenerateQueries}
+                onFetchVolumes={handleFetchFunnelVolumes}
                 generatingStage={generatingStage}
+                fetchingVolumes={fetchingFunnelVolumes}
                 loading={loadingFunnel}
               />
             </div>

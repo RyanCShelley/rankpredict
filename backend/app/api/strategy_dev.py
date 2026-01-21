@@ -818,6 +818,104 @@ async def get_topic_graph_data(
     }
 
 
+# Fetch Volumes Endpoint
+@router.post("/projects/{project_id}/fetch-volumes")
+async def fetch_project_volumes(
+    project_id: int,
+    keyword_ids: Optional[List[int]] = Query(default=None),
+    current_user: User = Depends(get_current_user_from_token),
+    db: Session = Depends(get_db)
+):
+    """Fetch search volumes for project keywords using Keywords Everywhere."""
+    project = db.query(StrategyProject).filter(
+        StrategyProject.id == project_id,
+        StrategyProject.user_id == current_user.id
+    ).first()
+
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # Get keywords to update
+    query = db.query(StrategyKeyword).filter(
+        StrategyKeyword.project_id == project_id
+    )
+
+    if keyword_ids:
+        query = query.filter(StrategyKeyword.id.in_(keyword_ids))
+    else:
+        # Only fetch for keywords without volume
+        query = query.filter(StrategyKeyword.volume.is_(None))
+
+    keywords = query.all()
+
+    if not keywords:
+        return {"message": "No keywords to update", "updated": 0}
+
+    # Fetch volumes in batches
+    keyword_texts = [kw.query for kw in keywords]
+    print(f"Fetching volumes for {len(keyword_texts)} keywords...")
+
+    try:
+        volumes = await fetch_keyword_volumes(keyword_texts)
+        print(f"Got volumes for {len(volumes)} keywords")
+
+        # Update keywords with volumes
+        updated = 0
+        for kw in keywords:
+            vol = volumes.get(kw.query.lower())
+            if vol:
+                kw.volume = vol
+                updated += 1
+
+        db.commit()
+
+        return {
+            "message": f"Updated {updated} keywords with volumes",
+            "updated": updated,
+            "total": len(keywords)
+        }
+
+    except Exception as e:
+        print(f"Error fetching volumes: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch volumes: {str(e)}")
+
+
+# Delete Multiple Keywords
+@router.post("/keywords/delete-bulk")
+async def delete_keywords_bulk(
+    keyword_ids: List[int] = Query(...),
+    current_user: User = Depends(get_current_user_from_token),
+    db: Session = Depends(get_db)
+):
+    """Delete multiple strategy keywords."""
+    keywords = db.query(StrategyKeyword).filter(
+        StrategyKeyword.id.in_(keyword_ids)
+    ).all()
+
+    if not keywords:
+        raise HTTPException(status_code=404, detail="No keywords found")
+
+    # Verify user owns all projects
+    project_ids = set(kw.project_id for kw in keywords)
+    projects = db.query(StrategyProject).filter(
+        StrategyProject.id.in_(project_ids),
+        StrategyProject.user_id == current_user.id
+    ).all()
+
+    if len(projects) != len(project_ids):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # Delete keywords
+    deleted = 0
+    for kw in keywords:
+        db.delete(kw)
+        deleted += 1
+
+    db.commit()
+
+    return {"message": f"Deleted {deleted} keywords", "deleted": deleted}
+
+
 # Funnel View Endpoints
 @router.get("/projects/{project_id}/funnel")
 async def get_funnel_data(

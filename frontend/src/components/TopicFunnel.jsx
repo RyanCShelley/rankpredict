@@ -13,7 +13,9 @@ export default function TopicFunnel({
   onMoveKeyword,
   onDeleteKeyword,
   onGenerateQueries,
+  onFetchVolumes,
   generatingStage,
+  fetchingVolumes,
   loading
 }) {
   const [expandedStages, setExpandedStages] = useState(new Set(STAGES.map(s => s.id)));
@@ -106,6 +108,16 @@ export default function TopicFunnel({
                           <div className="opacity-75">Avg Pos</div>
                           <div className="font-semibold">{stageData.avg_position || '-'}</div>
                         </div>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onFetchVolumes?.(stage.id);
+                          }}
+                          disabled={fetchingVolumes === stage.id}
+                          className="bg-white/20 hover:bg-white/30 px-3 py-1 rounded text-xs font-medium disabled:opacity-50"
+                        >
+                          {fetchingVolumes === stage.id ? 'Fetching...' : 'Get Volumes'}
+                        </button>
                         <button
                           onClick={(e) => {
                             e.stopPropagation();

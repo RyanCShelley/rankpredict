@@ -293,6 +293,24 @@ export const strategyDevAPI = {
     if (topic) url += `?topic=${encodeURIComponent(topic)}`;
     const response = await api.get(url, { responseType: 'blob' });
     return response.data;
+  },
+
+  // Fetch Volumes
+  fetchStrategyVolumes: async (projectId, keywordIds = null) => {
+    let url = `/api/strategy-dev/projects/${projectId}/fetch-volumes`;
+    if (keywordIds && keywordIds.length > 0) {
+      const params = keywordIds.map(id => `keyword_ids=${id}`).join('&');
+      url += `?${params}`;
+    }
+    const response = await api.post(url);
+    return response.data;
+  },
+
+  // Delete Multiple Keywords
+  deleteKeywordsBulk: async (keywordIds) => {
+    const params = keywordIds.map(id => `keyword_ids=${id}`).join('&');
+    const response = await api.post(`/api/strategy-dev/keywords/delete-bulk?${params}`);
+    return response.data;
   }
 };
 
