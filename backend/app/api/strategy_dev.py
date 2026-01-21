@@ -403,12 +403,16 @@ async def sync_project(
         raise HTTPException(status_code=400, detail="No GSC property selected")
 
     try:
+        print(f"Starting sync for project {project_id}...")
+
         # Fetch GSC data
+        print("Fetching GSC data...")
         rows, _ = await gsc_service.fetch_with_refresh(
             project.gsc_refresh_token,
             project.gsc_property_url,
             days=90
         )
+        print(f"Fetched {len(rows)} rows from GSC")
 
         if not rows:
             return {"message": "No data found in GSC", "keywords_added": 0}
@@ -422,9 +426,11 @@ async def sync_project(
         queries = [r["query"] for r in rows]
         topics = project.core_topics or []
 
+        print(f"Classifying {len(queries)} keywords...")
         topic_results = topic_service.classify_keywords_batch(
             queries, topics, threshold=TOPIC_SIMILARITY_THRESHOLD
         )
+        print("Topic classification complete")
 
         # Create lookup for topic assignments
         topic_lookup = {r["keyword"]: r for r in topic_results}
@@ -489,6 +495,9 @@ async def sync_project(
         }
 
     except Exception as e:
+        import traceback
+        print(f"Sync error: {e}")
+        print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Sync failed: {str(e)}")
 
 
