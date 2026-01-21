@@ -65,3 +65,6 @@ GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/ap
 # Strategy Development
 TOPIC_SIMILARITY_THRESHOLD = float(os.getenv("TOPIC_SIMILARITY_THRESHOLD", "0.65"))
 
+# Gemini API for Query Fanning
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+

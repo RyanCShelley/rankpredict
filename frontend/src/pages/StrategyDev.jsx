@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { strategyDevAPI, strategyAPI } from '../services/api';
-import TopicGraph from '../components/TopicGraph';
+import TopicFunnel from '../components/TopicFunnel';
 
 const JOURNEY_STAGES = [
   'Decision / Action',
@@ -60,11 +60,12 @@ export default function StrategyDev() {
   const [exportNewListName, setExportNewListName] = useState('');
   const [exportTargetDomain, setExportTargetDomain] = useState('');
 
-  // Visualization
-  const [showGraph, setShowGraph] = useState(false);
-  const [graphTopic, setGraphTopic] = useState('');
-  const [graphData, setGraphData] = useState({ nodes: [], edges: [] });
-  const [loadingGraph, setLoadingGraph] = useState(false);
+  // Funnel Visualization
+  const [showFunnel, setShowFunnel] = useState(false);
+  const [funnelTopic, setFunnelTopic] = useState('');
+  const [funnelData, setFunnelData] = useState(null);
+  const [loadingFunnel, setLoadingFunnel] = useState(false);
+  const [generatingStage, setGeneratingStage] = useState(null);
 
   // Load projects
   useEffect(() => {
@@ -413,20 +414,106 @@ export default function StrategyDev() {
   // Get unique topics from keywords
   const uniqueTopics = [...new Set((projectData?.keywords || []).map(k => k.assigned_topic).filter(Boolean))];
 
-  // Load graph visualization
+  // Load funnel visualization
   const handleVisualizeTopic = async (topic) => {
     if (!selectedProject) return;
-    setGraphTopic(topic);
-    setLoadingGraph(true);
-    setShowGraph(true);
+    setFunnelTopic(topic);
+    setLoadingFunnel(true);
+    setShowFunnel(true);
     try {
-      const data = await strategyDevAPI.getTopicGraphData(selectedProject.id, topic);
-      setGraphData(data);
+      const data = await strategyDevAPI.getFunnelData(selectedProject.id, topic);
+      setFunnelData(data);
     } catch (err) {
-      console.error('Failed to load graph:', err);
-      setGraphData({ nodes: [], edges: [] });
+      console.error('Failed to load funnel:', err);
+      setFunnelData(null);
     } finally {
-      setLoadingGraph(false);
+      setLoadingFunnel(false);
+    }
+  };
+
+  // Reload funnel data
+  const reloadFunnelData = async () => {
+    if (!selectedProject || !funnelTopic) return;
+    try {
+      const data = await strategyDevAPI.getFunnelData(selectedProject.id, funnelTopic);
+      setFunnelData(data);
+    } catch (err) {
+      console.error('Failed to reload funnel:', err);
+    }
+  };
+
+  // Move keyword to different stage
+  const handleMoveKeyword = async (keywordId, newStage) => {
+    try {
+      await strategyDevAPI.updateKeywordStage(keywordId, newStage);
+      reloadFunnelData();
+    } catch (err) {
+      console.error('Failed to move keyword:', err);
+      alert('Failed to move keyword');
+    }
+  };
+
+  // Delete keyword
+  const handleDeleteFunnelKeyword = async (keywordId) => {
+    if (!confirm('Delete this keyword?')) return;
+    try {
+      await strategyDevAPI.deleteStrategyKeyword(keywordId);
+      reloadFunnelData();
+      loadProjectData(); // Refresh main table too
+    } catch (err) {
+      console.error('Failed to delete keyword:', err);
+      alert('Failed to delete keyword');
+    }
+  };
+
+  // Generate queries for a stage
+  const handleGenerateQueries = async (stage) => {
+    if (!selectedProject || !funnelTopic) return;
+    setGeneratingStage(stage);
+    try {
+      const result = await strategyDevAPI.generateQueries(selectedProject.id, stage, funnelTopic);
+      alert(`Generated ${result.keywords.length} new queries`);
+      reloadFunnelData();
+      loadProjectData();
+    } catch (err) {
+      console.error('Failed to generate queries:', err);
+      alert('Failed to generate queries: ' + (err.response?.data?.detail || err.message));
+    } finally {
+      setGeneratingStage(null);
+    }
+  };
+
+  // Export funnel as CSV
+  const handleExportFunnelCsv = async () => {
+    if (!selectedProject) return;
+    try {
+      const blob = await strategyDevAPI.exportFunnelCsv(selectedProject.id, funnelTopic);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `funnel_${funnelTopic || 'all'}.csv`.replace(/ /g, '_');
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Export failed:', err);
+      alert('Export failed');
+    }
+  };
+
+  // Export funnel as PDF
+  const handleExportFunnelPdf = async () => {
+    if (!selectedProject) return;
+    try {
+      const blob = await strategyDevAPI.exportFunnelPdf(selectedProject.id, funnelTopic);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `funnel_report_${funnelTopic || 'all'}.pdf`.replace(/ /g, '_');
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('PDF export failed:', err);
+      alert('PDF export failed');
     }
   };
 
@@ -570,9 +657,9 @@ export default function StrategyDev() {
                         <button
                           onClick={() => handleVisualizeTopic(t.name)}
                           className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded hover:bg-blue-200"
-                          title="Visualize topic"
+                          title="View buyer journey funnel"
                         >
-                          View
+                          Funnel
                         </button>
                       )}
                     </div>
@@ -1015,33 +1102,49 @@ export default function StrategyDev() {
         </div>
       )}
 
-      {/* Topic Visualization Modal */}
-      {showGraph && (
+      {/* Topic Funnel Modal */}
+      {showFunnel && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg w-full max-w-5xl h-[80vh] p-4 flex flex-col">
+          <div className="bg-white rounded-lg w-full max-w-6xl h-[90vh] p-4 flex flex-col">
             <div className="flex justify-between items-center mb-4">
-              <h2 className="text-lg font-bold">
-                Topic Visualization: {graphTopic}
-              </h2>
-              <button
-                onClick={() => setShowGraph(false)}
-                className="text-gray-500 hover:text-gray-700 text-2xl"
-              >
-                ×
-              </button>
+              <div>
+                <h2 className="text-lg font-bold">
+                  Buyer Journey Funnel: {funnelTopic}
+                </h2>
+                <p className="text-sm text-gray-500">
+                  Click stages to expand. Move keywords between stages or generate new queries.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleExportFunnelCsv}
+                  className="bg-gray-100 text-gray-700 px-3 py-1.5 rounded text-sm hover:bg-gray-200"
+                >
+                  Export CSV
+                </button>
+                <button
+                  onClick={handleExportFunnelPdf}
+                  className="bg-[#223540] text-white px-3 py-1.5 rounded text-sm hover:bg-[#2d4654]"
+                >
+                  Export PDF
+                </button>
+                <button
+                  onClick={() => setShowFunnel(false)}
+                  className="text-gray-500 hover:text-gray-700 text-2xl ml-4"
+                >
+                  ×
+                </button>
+              </div>
             </div>
-            <div className="flex-1 min-h-0">
-              {loadingGraph ? (
-                <div className="flex items-center justify-center h-full text-gray-500">
-                  Loading visualization...
-                </div>
-              ) : (
-                <TopicGraph
-                  nodes={graphData.nodes}
-                  edges={graphData.edges}
-                  onNodeClick={(node) => console.log('Clicked:', node)}
-                />
-              )}
+            <div className="flex-1 min-h-0 overflow-hidden">
+              <TopicFunnel
+                funnelData={funnelData}
+                onMoveKeyword={handleMoveKeyword}
+                onDeleteKeyword={handleDeleteFunnelKeyword}
+                onGenerateQueries={handleGenerateQueries}
+                generatingStage={generatingStage}
+                loading={loadingFunnel}
+              />
             </div>
           </div>
         </div>

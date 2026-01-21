@@ -816,3 +816,460 @@ async def get_topic_graph_data(
         "nodes": nodes,
         "edges": edges
     }
+
+
+# Funnel View Endpoints
+@router.get("/projects/{project_id}/funnel")
+async def get_funnel_data(
+    project_id: int,
+    topic: Optional[str] = None,
+    current_user: User = Depends(get_current_user_from_token),
+    db: Session = Depends(get_db)
+):
+    """Get funnel visualization data for a topic or all topics."""
+    project = db.query(StrategyProject).filter(
+        StrategyProject.id == project_id,
+        StrategyProject.user_id == current_user.id
+    ).first()
+
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # Build query
+    query = db.query(StrategyKeyword).filter(
+        StrategyKeyword.project_id == project_id
+    )
+
+    if topic:
+        query = query.filter(StrategyKeyword.assigned_topic == topic)
+
+    keywords = query.order_by(StrategyKeyword.clicks.desc()).all()
+
+    # Define stage order (top to bottom of funnel)
+    stages = [
+        "Trigger / Awareness",
+        "Exploration / Consideration",
+        "Narrowing / Evaluation",
+        "Validation / Trust",
+        "Decision / Action"
+    ]
+
+    # Group keywords by stage
+    funnel_data = {}
+    for stage in stages:
+        stage_keywords = [kw for kw in keywords if kw.buyer_journey_stage == stage]
+
+        total_volume = sum(kw.volume or 0 for kw in stage_keywords)
+        total_clicks = sum(kw.clicks or 0 for kw in stage_keywords)
+        avg_position = None
+        if stage_keywords:
+            positions = [kw.avg_position for kw in stage_keywords if kw.avg_position]
+            if positions:
+                avg_position = round(sum(positions) / len(positions), 1)
+
+        funnel_data[stage] = {
+            "stage": stage,
+            "total_volume": total_volume,
+            "total_clicks": total_clicks,
+            "avg_position": avg_position,
+            "keyword_count": len(stage_keywords),
+            "keywords": [
+                {
+                    "id": kw.id,
+                    "query": kw.query,
+                    "page_url": kw.page_url,
+                    "clicks": kw.clicks,
+                    "impressions": kw.impressions,
+                    "avg_position": kw.avg_position,
+                    "volume": kw.volume,
+                    "topic": kw.assigned_topic,
+                    "is_ai_generated": kw.is_ai_generated if hasattr(kw, 'is_ai_generated') else False
+                }
+                for kw in stage_keywords
+            ]
+        }
+
+    return {
+        "project_id": project_id,
+        "topic": topic,
+        "stages": funnel_data
+    }
+
+
+class UpdateKeywordStageRequest(BaseModel):
+    stage: str
+
+
+@router.patch("/keywords/{keyword_id}/stage")
+async def update_keyword_stage(
+    keyword_id: int,
+    request: UpdateKeywordStageRequest,
+    current_user: User = Depends(get_current_user_from_token),
+    db: Session = Depends(get_db)
+):
+    """Move a keyword to a different buyer journey stage."""
+    keyword = db.query(StrategyKeyword).filter(
+        StrategyKeyword.id == keyword_id
+    ).first()
+
+    if not keyword:
+        raise HTTPException(status_code=404, detail="Keyword not found")
+
+    # Verify user owns the project
+    project = db.query(StrategyProject).filter(
+        StrategyProject.id == keyword.project_id,
+        StrategyProject.user_id == current_user.id
+    ).first()
+
+    if not project:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # Validate stage
+    valid_stages = [
+        "Trigger / Awareness",
+        "Exploration / Consideration",
+        "Narrowing / Evaluation",
+        "Validation / Trust",
+        "Decision / Action"
+    ]
+
+    if request.stage not in valid_stages:
+        raise HTTPException(status_code=400, detail=f"Invalid stage. Must be one of: {valid_stages}")
+
+    keyword.buyer_journey_stage = request.stage
+    db.commit()
+
+    return {"message": "Stage updated", "keyword_id": keyword_id, "new_stage": request.stage}
+
+
+@router.delete("/keywords/{keyword_id}")
+async def delete_strategy_keyword(
+    keyword_id: int,
+    current_user: User = Depends(get_current_user_from_token),
+    db: Session = Depends(get_db)
+):
+    """Delete a strategy keyword."""
+    keyword = db.query(StrategyKeyword).filter(
+        StrategyKeyword.id == keyword_id
+    ).first()
+
+    if not keyword:
+        raise HTTPException(status_code=404, detail="Keyword not found")
+
+    # Verify user owns the project
+    project = db.query(StrategyProject).filter(
+        StrategyProject.id == keyword.project_id,
+        StrategyProject.user_id == current_user.id
+    ).first()
+
+    if not project:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    db.delete(keyword)
+    db.commit()
+
+    return {"message": "Keyword deleted"}
+
+
+class QueryFanningRequest(BaseModel):
+    stage: str
+    topic: str
+
+
+@router.post("/projects/{project_id}/generate-queries")
+async def generate_queries(
+    project_id: int,
+    request: QueryFanningRequest,
+    current_user: User = Depends(get_current_user_from_token),
+    db: Session = Depends(get_db)
+):
+    """Generate AI-powered fan-out queries for a specific stage."""
+    from app.services import query_fanning_service
+
+    project = db.query(StrategyProject).filter(
+        StrategyProject.id == project_id,
+        StrategyProject.user_id == current_user.id
+    ).first()
+
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # Get existing queries in this stage for the topic
+    existing = db.query(StrategyKeyword).filter(
+        StrategyKeyword.project_id == project_id,
+        StrategyKeyword.assigned_topic == request.topic,
+        StrategyKeyword.buyer_journey_stage == request.stage
+    ).all()
+
+    existing_queries = [kw.query for kw in existing]
+
+    try:
+        # Generate new queries
+        new_queries, reasoning = await query_fanning_service.generate_stage_queries(
+            stage=request.stage,
+            topic=request.topic,
+            existing_queries=existing_queries
+        )
+
+        # Add new queries to the database
+        added_keywords = []
+        for query in new_queries:
+            kw = StrategyKeyword(
+                project_id=project_id,
+                query=query,
+                assigned_topic=request.topic,
+                buyer_journey_stage=request.stage,
+                is_ai_generated=True,
+                clicks=0,
+                impressions=0
+            )
+            db.add(kw)
+            db.flush()
+            added_keywords.append({
+                "id": kw.id,
+                "query": kw.query,
+                "stage": kw.buyer_journey_stage,
+                "topic": kw.assigned_topic,
+                "is_ai_generated": True
+            })
+
+        db.commit()
+
+        return {
+            "message": f"Generated {len(added_keywords)} new queries",
+            "reasoning": reasoning,
+            "keywords": added_keywords
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate queries: {str(e)}")
+
+
+@router.get("/projects/{project_id}/funnel/export-csv")
+async def export_funnel_csv(
+    project_id: int,
+    topic: Optional[str] = None,
+    current_user: User = Depends(get_current_user_from_token),
+    db: Session = Depends(get_db)
+):
+    """Export funnel data as CSV."""
+    project = db.query(StrategyProject).filter(
+        StrategyProject.id == project_id,
+        StrategyProject.user_id == current_user.id
+    ).first()
+
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # Build query
+    query = db.query(StrategyKeyword).filter(
+        StrategyKeyword.project_id == project_id
+    )
+
+    if topic:
+        query = query.filter(StrategyKeyword.assigned_topic == topic)
+
+    keywords = query.order_by(
+        StrategyKeyword.buyer_journey_stage,
+        StrategyKeyword.clicks.desc()
+    ).all()
+
+    # Generate CSV
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "Journey Stage", "Query", "Page URL", "Topic",
+        "Clicks", "Impressions", "Avg Position", "Volume", "AI Generated"
+    ])
+
+    for kw in keywords:
+        writer.writerow([
+            kw.buyer_journey_stage or "",
+            kw.query,
+            kw.page_url or "",
+            kw.assigned_topic or "",
+            kw.clicks,
+            kw.impressions,
+            round(kw.avg_position, 1) if kw.avg_position else "",
+            kw.volume or "",
+            "Yes" if getattr(kw, 'is_ai_generated', False) else "No"
+        ])
+
+    output.seek(0)
+    filename = f"funnel_export_{topic or 'all'}.csv".replace(" ", "_").replace("/", "-")
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
+
+
+@router.get("/projects/{project_id}/funnel/export-pdf")
+async def export_funnel_pdf(
+    project_id: int,
+    topic: Optional[str] = None,
+    current_user: User = Depends(get_current_user_from_token),
+    db: Session = Depends(get_db)
+):
+    """Export funnel data as PDF."""
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import letter, landscape
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import inch
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT
+
+    project = db.query(StrategyProject).filter(
+        StrategyProject.id == project_id,
+        StrategyProject.user_id == current_user.id
+    ).first()
+
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # Build query
+    query = db.query(StrategyKeyword).filter(
+        StrategyKeyword.project_id == project_id
+    )
+
+    if topic:
+        query = query.filter(StrategyKeyword.assigned_topic == topic)
+
+    keywords = query.all()
+
+    # Define stages
+    stages = [
+        "Trigger / Awareness",
+        "Exploration / Consideration",
+        "Narrowing / Evaluation",
+        "Validation / Trust",
+        "Decision / Action"
+    ]
+
+    # Create PDF
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=landscape(letter), topMargin=0.5*inch, bottomMargin=0.5*inch)
+    elements = []
+    styles = getSampleStyleSheet()
+
+    # Title
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=18,
+        spaceAfter=20,
+        alignment=TA_CENTER
+    )
+    elements.append(Paragraph(f"Buyer Journey Funnel: {topic or 'All Topics'}", title_style))
+    elements.append(Paragraph(f"Project: {project.name}", styles['Normal']))
+    elements.append(Spacer(1, 20))
+
+    # Stage colors for funnel
+    stage_colors = {
+        "Trigger / Awareness": colors.Color(0.42, 0.45, 0.50),  # Gray
+        "Exploration / Consideration": colors.Color(0.98, 0.45, 0.09),  # Orange
+        "Narrowing / Evaluation": colors.Color(0.66, 0.33, 0.97),  # Purple
+        "Validation / Trust": colors.Color(0.23, 0.51, 0.96),  # Blue
+        "Decision / Action": colors.Color(0.13, 0.77, 0.37),  # Green
+    }
+
+    # Summary table
+    summary_data = [["Stage", "Keywords", "Total Clicks", "Total Volume", "Avg Position"]]
+
+    for stage in stages:
+        stage_keywords = [kw for kw in keywords if kw.buyer_journey_stage == stage]
+        total_clicks = sum(kw.clicks or 0 for kw in stage_keywords)
+        total_volume = sum(kw.volume or 0 for kw in stage_keywords)
+        positions = [kw.avg_position for kw in stage_keywords if kw.avg_position]
+        avg_pos = round(sum(positions) / len(positions), 1) if positions else "-"
+
+        summary_data.append([
+            stage,
+            len(stage_keywords),
+            f"{total_clicks:,}",
+            f"{total_volume:,}",
+            avg_pos
+        ])
+
+    summary_table = Table(summary_data, colWidths=[2.5*inch, 1*inch, 1.2*inch, 1.2*inch, 1*inch])
+    summary_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.Color(0.13, 0.21, 0.25)),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 11),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black),
+        ('FONTSIZE', (0, 1), (-1, -1), 9),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+    ]))
+
+    # Add colored backgrounds for each stage row
+    for i, stage in enumerate(stages):
+        summary_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, i+1), (0, i+1), stage_colors.get(stage, colors.white)),
+            ('TEXTCOLOR', (0, i+1), (0, i+1), colors.white),
+        ]))
+
+    elements.append(summary_table)
+    elements.append(Spacer(1, 30))
+
+    # Detail tables for each stage
+    for stage in stages:
+        stage_keywords = [kw for kw in keywords if kw.buyer_journey_stage == stage]
+        if not stage_keywords:
+            continue
+
+        # Stage header
+        stage_style = ParagraphStyle(
+            'StageHeader',
+            parent=styles['Heading2'],
+            fontSize=12,
+            spaceAfter=10,
+            textColor=colors.white,
+            backColor=stage_colors.get(stage, colors.gray)
+        )
+        elements.append(Paragraph(f"  {stage} ({len(stage_keywords)} keywords)", stage_style))
+
+        # Keywords table (top 15 by clicks)
+        detail_data = [["Query", "Page URL", "Clicks", "Volume", "Avg Pos"]]
+        for kw in sorted(stage_keywords, key=lambda x: x.clicks or 0, reverse=True)[:15]:
+            query_text = kw.query[:50] + "..." if len(kw.query) > 50 else kw.query
+            page_text = (kw.page_url or "")[:40] + "..." if kw.page_url and len(kw.page_url) > 40 else (kw.page_url or "-")
+            ai_marker = " *" if getattr(kw, 'is_ai_generated', False) else ""
+            detail_data.append([
+                query_text + ai_marker,
+                page_text,
+                f"{kw.clicks:,}" if kw.clicks else "0",
+                f"{kw.volume:,}" if kw.volume else "-",
+                f"{kw.avg_position:.1f}" if kw.avg_position else "-"
+            ])
+
+        detail_table = Table(detail_data, colWidths=[3*inch, 3*inch, 0.8*inch, 0.8*inch, 0.7*inch])
+        detail_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.Color(0.9, 0.9, 0.9)),
+            ('ALIGN', (2, 0), (-1, -1), 'RIGHT'),
+            ('ALIGN', (0, 0), (1, -1), 'LEFT'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 8),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.gray),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('TOPPADDING', (0, 0), (-1, -1), 4),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ]))
+        elements.append(detail_table)
+        elements.append(Spacer(1, 15))
+
+    # Footer note
+    elements.append(Spacer(1, 20))
+    elements.append(Paragraph("* AI-generated queries", styles['Normal']))
+
+    doc.build(elements)
+    buffer.seek(0)
+
+    filename = f"funnel_report_{topic or 'all'}.pdf".replace(" ", "_").replace("/", "-")
+    return StreamingResponse(
+        buffer,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )

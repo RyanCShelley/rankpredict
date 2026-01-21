@@ -250,6 +250,49 @@ export const strategyDevAPI = {
   getTopicGraphData: async (projectId, topic) => {
     const response = await api.get(`/api/strategy-dev/projects/${projectId}/topic-graph?topic=${encodeURIComponent(topic)}`);
     return response.data;
+  },
+
+  // Funnel View
+  getFunnelData: async (projectId, topic = null) => {
+    let url = `/api/strategy-dev/projects/${projectId}/funnel`;
+    if (topic) url += `?topic=${encodeURIComponent(topic)}`;
+    const response = await api.get(url);
+    return response.data;
+  },
+
+  // Keyword Management
+  updateKeywordStage: async (keywordId, stage) => {
+    const response = await api.patch(`/api/strategy-dev/keywords/${keywordId}/stage`, { stage });
+    return response.data;
+  },
+
+  deleteStrategyKeyword: async (keywordId) => {
+    const response = await api.delete(`/api/strategy-dev/keywords/${keywordId}`);
+    return response.data;
+  },
+
+  // Query Fanning
+  generateQueries: async (projectId, stage, topic) => {
+    const response = await api.post(`/api/strategy-dev/projects/${projectId}/generate-queries`, {
+      stage,
+      topic
+    });
+    return response.data;
+  },
+
+  // Funnel Export
+  exportFunnelCsv: async (projectId, topic = null) => {
+    let url = `/api/strategy-dev/projects/${projectId}/funnel/export-csv`;
+    if (topic) url += `?topic=${encodeURIComponent(topic)}`;
+    const response = await api.get(url, { responseType: 'blob' });
+    return response.data;
+  },
+
+  exportFunnelPdf: async (projectId, topic = null) => {
+    let url = `/api/strategy-dev/projects/${projectId}/funnel/export-pdf`;
+    if (topic) url += `?topic=${encodeURIComponent(topic)}`;
+    const response = await api.get(url, { responseType: 'blob' });
+    return response.data;
   }
 };
 

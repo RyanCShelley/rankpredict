@@ -95,5 +95,16 @@ def run_migrations():
                 conn.execute(text("ALTER TABLE strategy_projects ADD COLUMN sync_message VARCHAR"))
                 conn.commit()
 
+    # Check if strategy_keywords table exists
+    if "strategy_keywords" in inspector.get_table_names():
+        columns = [col["name"] for col in inspector.get_columns("strategy_keywords")]
+
+        with engine.connect() as conn:
+            # Add is_ai_generated column if missing
+            if "is_ai_generated" not in columns:
+                print("Adding is_ai_generated column to strategy_keywords...")
+                conn.execute(text("ALTER TABLE strategy_keywords ADD COLUMN is_ai_generated BOOLEAN DEFAULT FALSE"))
+                conn.commit()
+
     print("Migrations complete")
 
