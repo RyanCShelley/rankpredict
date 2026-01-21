@@ -116,6 +116,14 @@ export default function StrategyDev() {
     loadProjectData();
   }, [loadProjectData]);
 
+  // Resume polling if project is already syncing
+  useEffect(() => {
+    if (selectedProject?.sync_status === 'syncing' && !syncing) {
+      setSyncing(true);
+      pollSyncStatus();
+    }
+  }, [selectedProject?.id]);
+
   const loadGscSites = async () => {
     if (!selectedProject?.id) return;
     try {
@@ -184,16 +192,57 @@ export default function StrategyDev() {
     setSyncing(true);
     try {
       const posFilter = maxPosition ? parseFloat(maxPosition) : null;
-      const result = await strategyDevAPI.syncProject(selectedProject.id, posFilter);
-      alert(`Sync complete! Added ${result.keywords_added} keywords, fetched ${result.volumes_fetched} volumes.`);
-      loadProjectData();
+      await strategyDevAPI.syncProject(selectedProject.id, posFilter);
+      // Start polling for sync status
+      pollSyncStatus();
     } catch (err) {
       console.error('Sync failed:', err);
       alert('Sync failed: ' + (err.response?.data?.detail || err.message));
-    } finally {
       setSyncing(false);
     }
   };
+
+  // Poll for sync status
+  const pollSyncStatus = useCallback(async () => {
+    if (!selectedProject) return;
+
+    const checkStatus = async () => {
+      try {
+        const data = await strategyDevAPI.getProject(selectedProject.id);
+        const status = data.project.sync_status;
+        const message = data.project.sync_message;
+
+        // Update selected project with latest status
+        setSelectedProject(prev => ({
+          ...prev,
+          sync_status: status,
+          sync_message: message
+        }));
+
+        if (status === 'syncing') {
+          // Continue polling
+          setTimeout(checkStatus, 2000);
+        } else {
+          // Sync complete or error
+          setSyncing(false);
+          loadProjectData();
+          loadProjects(); // Refresh project list
+
+          if (status === 'complete') {
+            // Don't show alert, the status message is visible in the UI
+          } else if (status === 'error') {
+            alert('Sync failed: ' + (message || 'Unknown error'));
+          }
+        }
+      } catch (err) {
+        console.error('Failed to check sync status:', err);
+        setSyncing(false);
+      }
+    };
+
+    // Start polling
+    setTimeout(checkStatus, 1000);
+  }, [selectedProject, loadProjectData]);
 
   const handleDeleteProject = async (projectId) => {
     if (!confirm('Delete this project and all its keywords?')) return;
@@ -409,6 +458,9 @@ export default function StrategyDev() {
                   <div className="text-xs text-gray-500 mt-1">
                     {p.keyword_count} keywords
                     {p.gsc_connected && <span className="ml-2 text-green-600">GSC Connected</span>}
+                    {p.sync_status === 'syncing' && (
+                      <span className="ml-2 text-blue-600 animate-pulse">Syncing...</span>
+                    )}
                   </div>
                 </div>
                 <div className="flex items-center gap-1">
@@ -477,6 +529,7 @@ export default function StrategyDev() {
                             className="w-20 border rounded px-2 py-1 text-sm"
                             min="1"
                             max="100"
+                            disabled={syncing}
                           />
                         </div>
                         <button
@@ -486,6 +539,16 @@ export default function StrategyDev() {
                         >
                           {syncing ? 'Syncing...' : 'Sync Data'}
                         </button>
+                        {syncing && selectedProject.sync_message && (
+                          <span className="text-sm text-blue-600 animate-pulse">
+                            {selectedProject.sync_message}
+                          </span>
+                        )}
+                        {!syncing && selectedProject.sync_status === 'complete' && selectedProject.sync_message && (
+                          <span className="text-sm text-green-600">
+                            {selectedProject.sync_message}
+                          </span>
+                        )}
                       </div>
                     )}
                   </>

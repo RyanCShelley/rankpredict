@@ -3,7 +3,7 @@ Strategy Development API Routes
 
 Handles projects, GSC integration, topic classification, and buyer journey analysis.
 """
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional
@@ -11,8 +11,9 @@ from pydantic import BaseModel
 import csv
 import io
 from datetime import datetime
+import asyncio
 
-from app.database import get_db
+from app.database import get_db, SessionLocal
 from app.models.database import StrategyProject, StrategyKeyword, User, KeywordList, Keyword
 from app.api.auth import get_current_user_from_token
 from app.services import gsc_service, topic_service, buyer_journey_service
@@ -47,6 +48,8 @@ class ProjectResponse(BaseModel):
     gsc_connected: bool
     core_topics: Optional[List[dict]]
     keyword_count: int
+    sync_status: Optional[str]
+    sync_message: Optional[str]
     created_at: datetime
     updated_at: datetime
 
@@ -106,6 +109,8 @@ async def list_projects(
             gsc_connected=bool(p.gsc_refresh_token),
             core_topics=p.core_topics,
             keyword_count=len(p.keywords),
+            sync_status=p.sync_status,
+            sync_message=p.sync_message,
             created_at=p.created_at,
             updated_at=p.updated_at
         )
@@ -142,6 +147,8 @@ async def create_project(
             "gsc_connected": bool(project.gsc_refresh_token),
             "core_topics": project.core_topics,
             "keyword_count": 0,
+            "sync_status": project.sync_status,
+            "sync_message": project.sync_message,
             "created_at": project.created_at.isoformat() if project.created_at else None,
             "updated_at": project.updated_at.isoformat() if project.updated_at else None
         }
@@ -190,6 +197,8 @@ async def get_project(
             gsc_connected=bool(project.gsc_refresh_token),
             core_topics=project.core_topics,
             keyword_count=len(project.keywords),
+            sync_status=project.sync_status,
+            sync_message=project.sync_message,
             created_at=project.created_at,
             updated_at=project.updated_at
         ),
@@ -247,6 +256,8 @@ async def update_project(
         gsc_connected=bool(project.gsc_refresh_token),
         core_topics=project.core_topics,
         keyword_count=len(project.keywords),
+        sync_status=project.sync_status,
+        sync_message=project.sync_message,
         created_at=project.created_at,
         updated_at=project.updated_at
     )
@@ -377,90 +388,124 @@ async def list_gsc_sites(
         raise HTTPException(status_code=400, detail=f"Failed to list sites: {str(e)}")
 
 
-# Sync Endpoint
-@router.post("/projects/{project_id}/sync")
-async def sync_project(
+# Background sync task
+def run_sync_in_background(
     project_id: int,
-    max_position: Optional[float] = Query(default=None, description="Only include queries with avg position <= this value"),
-    current_user: User = Depends(get_current_user_from_token),
-    db: Session = Depends(get_db)
+    max_position: Optional[float],
+    gsc_refresh_token: str,
+    gsc_property_url: str,
+    core_topics: Optional[List[dict]]
 ):
-    """
-    Sync GSC data, classify keywords, and fetch volumes.
-    This is the main action that pulls everything together.
-    """
-    project = db.query(StrategyProject).filter(
-        StrategyProject.id == project_id,
-        StrategyProject.user_id == current_user.id
-    ).first()
+    """Background task that performs the actual sync work."""
+    import asyncio
 
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-
-    if not project.gsc_refresh_token:
-        raise HTTPException(status_code=400, detail="GSC not connected")
-
-    if not project.gsc_property_url:
-        raise HTTPException(status_code=400, detail="No GSC property selected")
+    # Create new event loop for background task
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
 
     try:
-        print(f"Starting sync for project {project_id}...")
+        loop.run_until_complete(
+            _do_sync(project_id, max_position, gsc_refresh_token, gsc_property_url, core_topics)
+        )
+    finally:
+        loop.close()
+
+
+async def _do_sync(
+    project_id: int,
+    max_position: Optional[float],
+    gsc_refresh_token: str,
+    gsc_property_url: str,
+    core_topics: Optional[List[dict]]
+):
+    """Actual sync logic that runs in background."""
+    # Create new DB session for background task
+    db = SessionLocal()
+
+    try:
+        print(f"[Background] Starting sync for project {project_id}...")
+
+        # Update status to syncing
+        project = db.query(StrategyProject).filter(StrategyProject.id == project_id).first()
+        if project:
+            project.sync_status = "syncing"
+            project.sync_message = "Fetching data from Google Search Console..."
+            db.commit()
 
         # Fetch GSC data
-        print("Fetching GSC data...")
+        print("[Background] Fetching GSC data...")
         rows, _ = await gsc_service.fetch_with_refresh(
-            project.gsc_refresh_token,
-            project.gsc_property_url,
+            gsc_refresh_token,
+            gsc_property_url,
             days=90
         )
-        print(f"Fetched {len(rows)} rows from GSC")
+        print(f"[Background] Fetched {len(rows)} rows from GSC")
 
         if not rows:
-            return {"message": "No data found in GSC", "keywords_added": 0}
+            project = db.query(StrategyProject).filter(StrategyProject.id == project_id).first()
+            if project:
+                project.sync_status = "complete"
+                project.sync_message = "No data found in GSC"
+                db.commit()
+            return
+
+        # Update status
+        project = db.query(StrategyProject).filter(StrategyProject.id == project_id).first()
+        if project:
+            project.sync_message = f"Processing {len(rows)} queries..."
+            db.commit()
 
         # Filter by position if specified
         if max_position is not None:
             original_count = len(rows)
             rows = [r for r in rows if r.get("avg_position") and r["avg_position"] <= max_position]
-            print(f"Filtered to {len(rows)} rows with position <= {max_position} (was {original_count})")
+            print(f"[Background] Filtered to {len(rows)} rows with position <= {max_position} (was {original_count})")
 
         # Limit total rows to prevent memory issues (max 5,000)
         MAX_KEYWORDS = 5000
         if len(rows) > MAX_KEYWORDS:
-            # Sort by clicks and take top MAX_KEYWORDS
             rows = sorted(rows, key=lambda x: x.get("clicks", 0), reverse=True)[:MAX_KEYWORDS]
-            print(f"Limited to top {MAX_KEYWORDS} keywords by clicks")
+            print(f"[Background] Limited to top {MAX_KEYWORDS} keywords by clicks")
 
         # Clear existing keywords
         db.query(StrategyKeyword).filter(
             StrategyKeyword.project_id == project_id
         ).delete()
+        db.commit()
 
         # Classify keywords by topic (only if topics defined)
         queries = [r["query"] for r in rows]
-        topics = project.core_topics or []
+        topics = core_topics or []
         topic_lookup = {}
 
         if topics:
-            print(f"Classifying {len(queries)} keywords by topic...")
+            # Update status
+            project = db.query(StrategyProject).filter(StrategyProject.id == project_id).first()
+            if project:
+                project.sync_message = f"Classifying {len(queries)} keywords by topic..."
+                db.commit()
+
+            print(f"[Background] Classifying {len(queries)} keywords by topic...")
             topic_results = topic_service.classify_keywords_batch(
                 queries, topics, threshold=TOPIC_SIMILARITY_THRESHOLD
             )
-            print(f"Building topic lookup from {len(topic_results)} results...")
             topic_lookup = {r["keyword"]: r for r in topic_results}
-            # Free memory
             del topic_results
-            print("Topic classification complete")
+            print("[Background] Topic classification complete")
         else:
-            print("No topics defined, skipping topic classification")
+            print("[Background] No topics defined, skipping topic classification")
 
-        # Free memory - we don't need queries list anymore
         del queries
-        print("Starting database inserts...")
 
-        # Add keywords with classifications (in batches to save memory)
+        # Update status
+        project = db.query(StrategyProject).filter(StrategyProject.id == project_id).first()
+        if project:
+            project.sync_message = "Saving keywords to database..."
+            db.commit()
+
+        # Add keywords with classifications
         keywords_added = 0
-        BATCH_SIZE = 200  # Smaller batches
+        BATCH_SIZE = 200
 
         for i, row in enumerate(rows):
             query = row["query"]
@@ -488,30 +533,96 @@ async def sync_project(
             db.add(kw)
             keywords_added += 1
 
-            # Commit in batches
             if keywords_added % BATCH_SIZE == 0:
                 db.commit()
-                print(f"Committed {keywords_added} keywords...")
+                print(f"[Background] Committed {keywords_added} keywords...")
 
-        db.commit()  # Final commit
-        print(f"Added {keywords_added} keywords to database")
+        db.commit()
+        print(f"[Background] Added {keywords_added} keywords to database")
 
-        # Skip volume fetching for now to speed up sync
-        # Volumes can be fetched separately later
-        volume_data = {}
-        print("Skipping volume fetch (can be done separately)")
+        # Update status to complete
+        project = db.query(StrategyProject).filter(StrategyProject.id == project_id).first()
+        if project:
+            project.sync_status = "complete"
+            project.sync_message = f"Sync complete. Added {keywords_added} keywords."
+            db.commit()
 
-        return {
-            "message": "Sync complete",
-            "keywords_added": keywords_added,
-            "volumes_fetched": len(volume_data)
-        }
+        print(f"[Background] Sync complete for project {project_id}")
 
     except Exception as e:
         import traceback
-        print(f"Sync error: {e}")
+        print(f"[Background] Sync error: {e}")
         print(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=f"Sync failed: {str(e)}")
+
+        # Update status to error
+        try:
+            project = db.query(StrategyProject).filter(StrategyProject.id == project_id).first()
+            if project:
+                project.sync_status = "error"
+                project.sync_message = f"Sync failed: {str(e)}"
+                db.commit()
+        except Exception:
+            pass
+    finally:
+        db.close()
+
+
+# Sync Endpoint
+@router.post("/projects/{project_id}/sync")
+async def sync_project(
+    project_id: int,
+    max_position: Optional[float] = Query(default=None, description="Only include queries with avg position <= this value"),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
+    current_user: User = Depends(get_current_user_from_token),
+    db: Session = Depends(get_db)
+):
+    """
+    Start a background sync of GSC data.
+    Returns immediately while sync runs in background.
+    Check project.sync_status to monitor progress.
+    """
+    project = db.query(StrategyProject).filter(
+        StrategyProject.id == project_id,
+        StrategyProject.user_id == current_user.id
+    ).first()
+
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    if not project.gsc_refresh_token:
+        raise HTTPException(status_code=400, detail="GSC not connected")
+
+    if not project.gsc_property_url:
+        raise HTTPException(status_code=400, detail="No GSC property selected")
+
+    # Check if already syncing
+    if project.sync_status == "syncing":
+        return {
+            "message": "Sync already in progress",
+            "sync_status": "syncing",
+            "sync_message": project.sync_message
+        }
+
+    # Set initial status
+    project.sync_status = "syncing"
+    project.sync_message = "Starting sync..."
+    db.commit()
+
+    # Start background task
+    background_tasks.add_task(
+        run_sync_in_background,
+        project_id,
+        max_position,
+        project.gsc_refresh_token,
+        project.gsc_property_url,
+        project.core_topics
+    )
+
+    return {
+        "message": "Sync started",
+        "sync_status": "syncing",
+        "sync_message": "Starting sync..."
+    }
 
 
 # Export Endpoints

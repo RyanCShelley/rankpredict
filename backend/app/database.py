@@ -65,3 +65,35 @@ def init_db():
     Base.metadata.create_all(bind=engine)
     print("Database tables initialized")
 
+    # Run migrations for new columns
+    run_migrations()
+
+
+def run_migrations():
+    """
+    Run any pending schema migrations.
+    This handles adding new columns to existing tables.
+    """
+    from sqlalchemy import text, inspect
+
+    inspector = inspect(engine)
+
+    # Check if strategy_projects table exists
+    if "strategy_projects" in inspector.get_table_names():
+        columns = [col["name"] for col in inspector.get_columns("strategy_projects")]
+
+        with engine.connect() as conn:
+            # Add sync_status column if missing
+            if "sync_status" not in columns:
+                print("Adding sync_status column to strategy_projects...")
+                conn.execute(text("ALTER TABLE strategy_projects ADD COLUMN sync_status VARCHAR"))
+                conn.commit()
+
+            # Add sync_message column if missing
+            if "sync_message" not in columns:
+                print("Adding sync_message column to strategy_projects...")
+                conn.execute(text("ALTER TABLE strategy_projects ADD COLUMN sync_message VARCHAR"))
+                conn.commit()
+
+    print("Migrations complete")
+
