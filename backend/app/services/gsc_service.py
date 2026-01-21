@@ -53,16 +53,22 @@ async def exchange_code(code: str) -> Dict:
         Dict with access_token, refresh_token, expires_in
     """
     async with httpx.AsyncClient() as client:
-        response = await client.post(
-            GOOGLE_TOKEN_URL,
-            data={
-                "client_id": GOOGLE_CLIENT_ID,
-                "client_secret": GOOGLE_CLIENT_SECRET,
-                "code": code,
-                "grant_type": "authorization_code",
-                "redirect_uri": GOOGLE_REDIRECT_URI
-            }
-        )
+        payload = {
+            "client_id": GOOGLE_CLIENT_ID,
+            "client_secret": GOOGLE_CLIENT_SECRET,
+            "code": code,
+            "grant_type": "authorization_code",
+            "redirect_uri": GOOGLE_REDIRECT_URI
+        }
+        print(f"Token exchange - client_id: {GOOGLE_CLIENT_ID[:20]}...")
+        print(f"Token exchange - redirect_uri: {GOOGLE_REDIRECT_URI}")
+
+        response = await client.post(GOOGLE_TOKEN_URL, data=payload)
+
+        if response.status_code != 200:
+            print(f"Token exchange failed: {response.status_code}")
+            print(f"Response: {response.text}")
+
         response.raise_for_status()
         return response.json()
 
