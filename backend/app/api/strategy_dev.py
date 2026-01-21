@@ -424,28 +424,38 @@ async def sync_project(
             rows = [r for r in rows if r.get("avg_position") and r["avg_position"] <= max_position]
             print(f"Filtered to {len(rows)} rows with position <= {max_position} (was {original_count})")
 
+        # Limit total rows to prevent memory issues (max 10,000)
+        MAX_KEYWORDS = 10000
+        if len(rows) > MAX_KEYWORDS:
+            # Sort by clicks and take top MAX_KEYWORDS
+            rows = sorted(rows, key=lambda x: x.get("clicks", 0), reverse=True)[:MAX_KEYWORDS]
+            print(f"Limited to top {MAX_KEYWORDS} keywords by clicks")
+
         # Clear existing keywords
         db.query(StrategyKeyword).filter(
             StrategyKeyword.project_id == project_id
         ).delete()
 
-        # Classify keywords by topic
+        # Classify keywords by topic (only if topics defined)
         queries = [r["query"] for r in rows]
         topics = project.core_topics or []
+        topic_lookup = {}
 
-        print(f"Classifying {len(queries)} keywords...")
-        topic_results = topic_service.classify_keywords_batch(
-            queries, topics, threshold=TOPIC_SIMILARITY_THRESHOLD
-        )
-        print("Topic classification complete")
+        if topics:
+            print(f"Classifying {len(queries)} keywords by topic...")
+            topic_results = topic_service.classify_keywords_batch(
+                queries, topics, threshold=TOPIC_SIMILARITY_THRESHOLD
+            )
+            topic_lookup = {r["keyword"]: r for r in topic_results}
+            print("Topic classification complete")
+        else:
+            print("No topics defined, skipping topic classification")
 
-        # Create lookup for topic assignments
-        topic_lookup = {r["keyword"]: r for r in topic_results}
-
-        # Add keywords with classifications
+        # Add keywords with classifications (in batches to save memory)
         keywords_added = 0
+        BATCH_SIZE = 500
 
-        for row in rows:
+        for i, row in enumerate(rows):
             query = row["query"]
             topic_data = topic_lookup.get(query, {})
 
@@ -471,7 +481,12 @@ async def sync_project(
             db.add(kw)
             keywords_added += 1
 
-        db.commit()
+            # Commit in batches
+            if keywords_added % BATCH_SIZE == 0:
+                db.commit()
+                print(f"Committed {keywords_added} keywords...")
+
+        db.commit()  # Final commit
         print(f"Added {keywords_added} keywords to database")
 
         # Fetch volumes from Keywords Everywhere (limit to 1000 to avoid timeout)
