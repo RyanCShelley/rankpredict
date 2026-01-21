@@ -98,7 +98,8 @@ def assign_topic(
 def classify_keywords_batch(
     keywords: List[str],
     topics: List[Dict],
-    threshold: float = DEFAULT_SIMILARITY_THRESHOLD
+    threshold: float = DEFAULT_SIMILARITY_THRESHOLD,
+    batch_size: int = 500
 ) -> List[Dict]:
     """
     Classify a batch of keywords against topics.
@@ -107,6 +108,7 @@ def classify_keywords_batch(
         keywords: List of keywords to classify
         topics: List of topic dicts with 'name' and 'keywords'
         threshold: Minimum similarity threshold
+        batch_size: Process keywords in batches of this size
 
     Returns:
         List of dicts with classification results:
@@ -117,21 +119,54 @@ def classify_keywords_batch(
     if not topics:
         return [{"keyword": kw, "assigned_topic": None, "topic_similarity": 0.0} for kw in keywords]
 
-    # Create topic embeddings
+    # Create topic embeddings once
     topic_embeddings = create_topic_embeddings(topics)
 
     if not topic_embeddings:
         return [{"keyword": kw, "assigned_topic": None, "topic_similarity": 0.0} for kw in keywords]
 
-    # Classify each keyword
+    model = get_model()
     results = []
-    for kw in keywords:
-        topic, score = assign_topic(kw, topic_embeddings, threshold)
-        results.append({
-            "keyword": kw,
-            "assigned_topic": topic,
-            "topic_similarity": score
-        })
+
+    # Process in batches to manage memory
+    for i in range(0, len(keywords), batch_size):
+        batch = keywords[i:i + batch_size]
+        print(f"  Processing batch {i // batch_size + 1} ({len(batch)} keywords)...")
+
+        # Encode batch of keywords at once (much faster)
+        keyword_embeddings = model.encode(batch, normalize_embeddings=True, show_progress_bar=False)
+
+        for j, kw in enumerate(batch):
+            keyword_embed = keyword_embeddings[j]
+            best_topic = None
+            best_score = 0.0
+
+            for topic_name, embeds in topic_embeddings.items():
+                sims = cosine_similarity(
+                    keyword_embed.reshape(1, -1),
+                    embeds
+                )[0]
+                max_sim = float(sims.max())
+
+                if max_sim > best_score:
+                    best_score = max_sim
+                    best_topic = topic_name
+
+            if best_score >= threshold:
+                results.append({
+                    "keyword": kw,
+                    "assigned_topic": best_topic,
+                    "topic_similarity": round(best_score, 3)
+                })
+            else:
+                results.append({
+                    "keyword": kw,
+                    "assigned_topic": None,
+                    "topic_similarity": round(best_score, 3)
+                })
+
+        # Free memory after each batch
+        del keyword_embeddings
 
     return results
 
