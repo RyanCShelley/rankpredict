@@ -64,6 +64,9 @@ Generate 6-8 NEW search queries that:
 3. Are NOT duplicates of existing queries
 4. Represent real searches people make
 5. Are specific and actionable for content creation
+6. Do NOT include any years, dates, or time references (no "2023", "2024", "2025", etc.)
+
+IMPORTANT: Never include years or dates in queries. Keep queries evergreen and timeless.
 
 Existing queries to avoid duplicating:
 {json.dumps(existing_queries[:20], indent=2)}

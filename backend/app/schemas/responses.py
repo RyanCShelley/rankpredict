@@ -36,6 +36,7 @@ class KeywordResponse(BaseModel):
     action_status: str = Field("none", description="'none', 'approved', 'whole', or 'removed'")
     content_type: str = Field(..., description="'new' or 'existing'")
     target_url: Optional[str] = None
+    has_outline: bool = Field(False, description="Whether an outline has been generated for this keyword")
     created_at: datetime
 
 

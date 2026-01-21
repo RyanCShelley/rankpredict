@@ -314,7 +314,6 @@ const StrategyDashboard = () => {
     switch (status) {
       case 'approved': return 'bg-green-100 text-green-800 border-green-300';
       case 'hold': return 'bg-yellow-100 text-yellow-800 border-yellow-300';
-      case 'outline_generated': return 'bg-purple-100 text-purple-800 border-purple-300';
       default: return 'bg-gray-50 text-gray-600 border-gray-300';
     }
   };
@@ -424,9 +423,15 @@ const StrategyDashboard = () => {
           bVal = b.client_forecast?.score || (b.rankability_score * 100) || 0;
           break;
         case 'action':
-          const actionOrder = { 'outline_generated': 1, 'approved': 2, 'hold': 3, 'none': 4 };
-          aVal = actionOrder[a.action_status] || 3;
-          bVal = actionOrder[b.action_status] || 3;
+          // Sort by has_outline first, then by action status
+          const getActionScore = (kw) => {
+            if (kw.has_outline) return 1;
+            if (kw.action_status === 'approved') return 2;
+            if (kw.action_status === 'hold') return 3;
+            return 4;
+          };
+          aVal = getActionScore(a);
+          bVal = getActionScore(b);
           break;
         default:
           aVal = 0;
@@ -830,17 +835,23 @@ const StrategyDashboard = () => {
                             )}
                           </td>
                           <td className="px-2 py-1.5 text-center">
-                            <select
-                              value={keyword.action_status || 'none'}
-                              onChange={(e) => handleActionChange(keyword.id, e.target.value)}
-                              className={`px-1.5 py-0.5 rounded text-xs border ${getStatusColor(keyword.action_status)}`}
-                            >
-                              <option value="none">-</option>
-                              <option value="approved">Approved</option>
-                              <option value="hold">Hold</option>
-                              <option value="outline_generated">Outline Generated</option>
-                              <option value="delete">Delete</option>
-                            </select>
+                            <div className="flex items-center justify-center gap-1">
+                              <select
+                                value={keyword.action_status || 'none'}
+                                onChange={(e) => handleActionChange(keyword.id, e.target.value)}
+                                className={`px-1.5 py-0.5 rounded text-xs border ${getStatusColor(keyword.action_status)}`}
+                              >
+                                <option value="none">-</option>
+                                <option value="approved">Approved</option>
+                                <option value="hold">Hold</option>
+                                <option value="delete">Delete</option>
+                              </select>
+                              {keyword.has_outline && (
+                                <span className="px-1.5 py-0.5 bg-purple-100 text-purple-800 border border-purple-300 rounded text-xs whitespace-nowrap" title="Outline has been generated">
+                                  Brief
+                                </span>
+                              )}
+                            </div>
                           </td>
                           <td className="px-2 py-1.5 text-center">
                             {isKeywordScored(keyword) ? (

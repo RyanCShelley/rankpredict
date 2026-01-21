@@ -72,6 +72,7 @@ def create_keyword_list(
                 action_status=k.action_status or "none",
                 content_type=k.content_type,
                 target_url=k.target_url,
+                has_outline=len(k.outlines) > 0,
                 created_at=k.created_at
             )
             for k in keywords
@@ -163,6 +164,7 @@ def get_keyword_list(list_id: int, db: Session = Depends(get_db)):
             action_status=k.action_status or "none",
             content_type=k.content_type,
             target_url=k.target_url,
+            has_outline=len(k.outlines) > 0,
             created_at=k.created_at
         ))
 
@@ -248,6 +250,7 @@ def score_keywords(
                 action_status=keyword_obj.action_status or "none",
                 content_type=keyword_obj.content_type,
                 target_url=keyword_obj.target_url,
+                has_outline=len(keyword_obj.outlines) > 0,
                 created_at=keyword_obj.created_at
             ))
             keywords_skipped += 1
@@ -383,6 +386,7 @@ def score_keywords(
                 action_status=keyword_obj.action_status or "none",
                 content_type=keyword_obj.content_type,
                 target_url=keyword_obj.target_url,
+                has_outline=len(keyword_obj.outlines) > 0,
                 created_at=keyword_obj.created_at
             ))
         except Exception as e:
@@ -436,6 +440,7 @@ def update_keyword(
         action_status=keyword.action_status or "none",
         content_type=keyword.content_type,
         target_url=keyword.target_url,
+        has_outline=len(keyword.outlines) > 0,
         created_at=keyword.created_at
     )
 
@@ -494,6 +499,7 @@ def add_keywords_to_list(
                 action_status=k.action_status or "none",
                 content_type=k.content_type,
                 target_url=k.target_url,
+                has_outline=len(k.outlines) > 0,
                 created_at=k.created_at
             )
             for k in keyword_list.keywords
@@ -699,6 +705,7 @@ def score_selected_keywords(
                 action_status=keyword_obj.action_status or "none",
                 content_type=keyword_obj.content_type,
                 target_url=keyword_obj.target_url,
+                has_outline=len(keyword_obj.outlines) > 0,
                 created_at=keyword_obj.created_at
             ))
         except Exception as e:

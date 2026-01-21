@@ -43,19 +43,19 @@ def get_keywords(
 ):
     """
     Get keywords for outline builder.
-    Only returns keywords that are SELECTED (approved) in the Strategy Dashboard.
+    Only returns keywords that are APPROVED in the Strategy Dashboard.
     If list_id is provided, filters to that specific project.
     """
     if list_id:
-        # Get selected keywords from specific list
+        # Get approved keywords from specific list
         keywords = db.query(Keyword).filter(
             Keyword.keyword_list_id == list_id,
-            Keyword.is_selected == True  # Only approved keywords
+            Keyword.action_status == "approved"  # Only approved keywords
         ).order_by(Keyword.rankability_score.desc()).all()
     else:
-        # Get all selected keywords across all lists
+        # Get all approved keywords across all lists
         keywords = db.query(Keyword).filter(
-            Keyword.is_selected == True
+            Keyword.action_status == "approved"
         ).order_by(Keyword.rankability_score.desc()).all()
 
     return [
@@ -66,7 +66,8 @@ def get_keywords(
             "opportunity_tier": k.opportunity_tier,
             "content_type": k.content_type,
             "target_url": k.target_url,
-            "keyword_list_id": k.keyword_list_id
+            "keyword_list_id": k.keyword_list_id,
+            "has_outline": len(k.outlines) > 0
         }
         for k in keywords
     ]
