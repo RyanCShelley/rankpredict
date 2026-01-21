@@ -14,7 +14,7 @@ from datetime import datetime
 
 from app.database import get_db
 from app.models.database import StrategyProject, StrategyKeyword, User, KeywordList, Keyword
-from app.api.auth import get_current_user
+from app.api.auth import get_current_user_from_token
 from app.services import gsc_service, topic_service, buyer_journey_service
 from app.services.keywords_everywhere_service import fetch_keyword_volumes
 from app.config import TOPIC_SIMILARITY_THRESHOLD
@@ -90,7 +90,7 @@ class ExportToListRequest(BaseModel):
 # Project CRUD Endpoints
 @router.get("/projects", response_model=List[ProjectResponse])
 async def list_projects(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_from_token),
     db: Session = Depends(get_db)
 ):
     """List all strategy projects for the current user."""
@@ -116,7 +116,7 @@ async def list_projects(
 @router.post("/projects")
 async def create_project(
     request: CreateProjectRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_from_token),
     db: Session = Depends(get_db)
 ):
     """Create a new strategy project."""
@@ -157,7 +157,7 @@ async def get_project(
     project_id: int,
     topic_filter: Optional[str] = None,
     stage_filter: Optional[str] = None,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_from_token),
     db: Session = Depends(get_db)
 ):
     """Get project details with keywords."""
@@ -216,7 +216,7 @@ async def get_project(
 async def update_project(
     project_id: int,
     request: UpdateProjectRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_from_token),
     db: Session = Depends(get_db)
 ):
     """Update project settings."""
@@ -255,7 +255,7 @@ async def update_project(
 @router.delete("/projects/{project_id}")
 async def delete_project(
     project_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_from_token),
     db: Session = Depends(get_db)
 ):
     """Delete a project and all its keywords."""
@@ -277,7 +277,7 @@ async def delete_project(
 @router.get("/gsc/auth-url", response_model=GscAuthUrlResponse)
 async def get_gsc_auth_url(
     project_id: int,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user_from_token)
 ):
     """Get OAuth URL for Google Search Console authorization."""
     if not gsc_service.is_configured():
@@ -343,7 +343,7 @@ async def gsc_callback(
 @router.get("/gsc/sites", response_model=List[GscSiteResponse])
 async def list_gsc_sites(
     project_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_from_token),
     db: Session = Depends(get_db)
 ):
     """List available GSC sites for a connected project."""
@@ -381,7 +381,7 @@ async def list_gsc_sites(
 @router.post("/projects/{project_id}/sync")
 async def sync_project(
     project_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_from_token),
     db: Session = Depends(get_db)
 ):
     """
@@ -496,7 +496,7 @@ async def sync_project(
 @router.post("/keywords/export-csv")
 async def export_keywords_csv(
     keyword_ids: List[int] = Query(...),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_from_token),
     db: Session = Depends(get_db)
 ):
     """Export selected keywords to CSV."""
@@ -549,7 +549,7 @@ async def export_keywords_csv(
 @router.post("/keywords/add-to-list")
 async def add_keywords_to_list(
     request: ExportToListRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_from_token),
     db: Session = Depends(get_db)
 ):
     """Add selected keywords to an existing or new Rank Predict list."""
@@ -623,7 +623,7 @@ async def add_keywords_to_list(
 async def get_topic_graph_data(
     project_id: int,
     topic: str,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_from_token),
     db: Session = Depends(get_db)
 ):
     """Get graph visualization data for a topic."""
