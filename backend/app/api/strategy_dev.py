@@ -381,6 +381,7 @@ async def list_gsc_sites(
 @router.post("/projects/{project_id}/sync")
 async def sync_project(
     project_id: int,
+    max_position: Optional[float] = Query(default=None, description="Only include queries with avg position <= this value"),
     current_user: User = Depends(get_current_user_from_token),
     db: Session = Depends(get_db)
 ):
@@ -416,6 +417,12 @@ async def sync_project(
 
         if not rows:
             return {"message": "No data found in GSC", "keywords_added": 0}
+
+        # Filter by position if specified
+        if max_position is not None:
+            original_count = len(rows)
+            rows = [r for r in rows if r.get("avg_position") and r["avg_position"] <= max_position]
+            print(f"Filtered to {len(rows)} rows with position <= {max_position} (was {original_count})")
 
         # Clear existing keywords
         db.query(StrategyKeyword).filter(

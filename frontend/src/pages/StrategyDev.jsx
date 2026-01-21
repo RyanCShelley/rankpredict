@@ -40,6 +40,7 @@ export default function StrategyDev() {
   // GSC state
   const [gscSites, setGscSites] = useState([]);
   const [showSiteSelect, setShowSiteSelect] = useState(false);
+  const [maxPosition, setMaxPosition] = useState(''); // Position filter for sync
 
   // Filters
   const [topicFilter, setTopicFilter] = useState('');
@@ -182,7 +183,8 @@ export default function StrategyDev() {
     if (!selectedProject) return;
     setSyncing(true);
     try {
-      const result = await strategyDevAPI.syncProject(selectedProject.id);
+      const posFilter = maxPosition ? parseFloat(maxPosition) : null;
+      const result = await strategyDevAPI.syncProject(selectedProject.id, posFilter);
       alert(`Sync complete! Added ${result.keywords_added} keywords, fetched ${result.volumes_fetched} volumes.`);
       loadProjectData();
     } catch (err) {
@@ -464,13 +466,27 @@ export default function StrategyDev() {
                       </button>
                     )}
                     {selectedProject.gsc_property_url && (
-                      <button
-                        onClick={handleSync}
-                        disabled={syncing}
-                        className="bg-[#223540] text-white px-4 py-2 rounded text-sm hover:bg-[#2d4654] disabled:opacity-50"
-                      >
-                        {syncing ? 'Syncing...' : 'Sync Data'}
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1">
+                          <label className="text-xs text-gray-600">Max Position:</label>
+                          <input
+                            type="number"
+                            value={maxPosition}
+                            onChange={(e) => setMaxPosition(e.target.value)}
+                            placeholder="e.g. 20"
+                            className="w-20 border rounded px-2 py-1 text-sm"
+                            min="1"
+                            max="100"
+                          />
+                        </div>
+                        <button
+                          onClick={handleSync}
+                          disabled={syncing}
+                          className="bg-[#223540] text-white px-4 py-2 rounded text-sm hover:bg-[#2d4654] disabled:opacity-50"
+                        >
+                          {syncing ? 'Syncing...' : 'Sync Data'}
+                        </button>
+                      </div>
                     )}
                   </>
                 )}

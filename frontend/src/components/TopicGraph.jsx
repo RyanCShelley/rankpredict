@@ -72,6 +72,18 @@ export default function TopicGraph({ nodes, edges, onNodeClick }) {
     );
   }
 
+  // Calculate click range for node sizing
+  const clicks = keywordNodes.map(n => n.clicks || 0);
+  const maxClicks = Math.max(...clicks, 1);
+  const minClicks = Math.min(...clicks, 0);
+
+  // Scale node radius based on clicks (min 6, max 25)
+  const getNodeRadius = (nodeClicks) => {
+    if (maxClicks === minClicks) return 12;
+    const normalized = (nodeClicks - minClicks) / (maxClicks - minClicks);
+    return 6 + normalized * 19; // Range from 6 to 25
+  };
+
   // Center offset
   const centerX = dimensions.width / 2;
   const centerY = dimensions.height / 2;
@@ -171,6 +183,7 @@ export default function TopicGraph({ nodes, edges, onNodeClick }) {
             const y = node.y - 300 + centerY;
             const color = node.color || STAGE_COLORS[node.stage] || '#6b7280';
             const isHovered = hoveredNode?.id === node.id;
+            const baseRadius = getNodeRadius(node.clicks || 0);
 
             return (
               <g
@@ -182,7 +195,7 @@ export default function TopicGraph({ nodes, edges, onNodeClick }) {
                 style={{ cursor: 'pointer' }}
               >
                 <circle
-                  r={isHovered ? 12 : 8}
+                  r={isHovered ? baseRadius + 4 : baseRadius}
                   fill={color}
                   stroke="#fff"
                   strokeWidth={2}

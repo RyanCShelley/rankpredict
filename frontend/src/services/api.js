@@ -218,8 +218,12 @@ export const strategyDevAPI = {
   },
 
   // Sync
-  syncProject: async (projectId) => {
-    const response = await api.post(`/api/strategy-dev/projects/${projectId}/sync`);
+  syncProject: async (projectId, maxPosition = null) => {
+    let url = `/api/strategy-dev/projects/${projectId}/sync`;
+    if (maxPosition !== null) {
+      url += `?max_position=${maxPosition}`;
+    }
+    const response = await api.post(url);
     return response.data;
   },
 
