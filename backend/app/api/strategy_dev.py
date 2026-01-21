@@ -424,8 +424,8 @@ async def sync_project(
             rows = [r for r in rows if r.get("avg_position") and r["avg_position"] <= max_position]
             print(f"Filtered to {len(rows)} rows with position <= {max_position} (was {original_count})")
 
-        # Limit total rows to prevent memory issues (max 10,000)
-        MAX_KEYWORDS = 10000
+        # Limit total rows to prevent memory issues (max 5,000)
+        MAX_KEYWORDS = 5000
         if len(rows) > MAX_KEYWORDS:
             # Sort by clicks and take top MAX_KEYWORDS
             rows = sorted(rows, key=lambda x: x.get("clicks", 0), reverse=True)[:MAX_KEYWORDS]
@@ -446,14 +446,21 @@ async def sync_project(
             topic_results = topic_service.classify_keywords_batch(
                 queries, topics, threshold=TOPIC_SIMILARITY_THRESHOLD
             )
+            print(f"Building topic lookup from {len(topic_results)} results...")
             topic_lookup = {r["keyword"]: r for r in topic_results}
+            # Free memory
+            del topic_results
             print("Topic classification complete")
         else:
             print("No topics defined, skipping topic classification")
 
+        # Free memory - we don't need queries list anymore
+        del queries
+        print("Starting database inserts...")
+
         # Add keywords with classifications (in batches to save memory)
         keywords_added = 0
-        BATCH_SIZE = 500
+        BATCH_SIZE = 200  # Smaller batches
 
         for i, row in enumerate(rows):
             query = row["query"]
@@ -489,34 +496,10 @@ async def sync_project(
         db.commit()  # Final commit
         print(f"Added {keywords_added} keywords to database")
 
-        # Fetch volumes from Keywords Everywhere (limit to 1000 to avoid timeout)
+        # Skip volume fetching for now to speed up sync
+        # Volumes can be fetched separately later
         volume_data = {}
-        # Get top keywords by clicks for volume fetching
-        top_keywords = db.query(StrategyKeyword).filter(
-            StrategyKeyword.project_id == project_id
-        ).order_by(StrategyKeyword.clicks.desc()).limit(1000).all()
-
-        queries_for_volume = [kw.query for kw in top_keywords]
-        print(f"Fetching volumes for top {len(queries_for_volume)} keywords...")
-
-        if queries_for_volume:
-            try:
-                volume_data = await fetch_keyword_volumes(queries_for_volume)
-                print(f"Fetched {len(volume_data)} volumes")
-            except Exception as e:
-                print(f"Volume fetch error: {e}")
-
-        # Update volumes
-        if volume_data:
-            keywords = db.query(StrategyKeyword).filter(
-                StrategyKeyword.project_id == project_id
-            ).all()
-
-            for kw in keywords:
-                if kw.query in volume_data:
-                    kw.volume = volume_data[kw.query]
-
-            db.commit()
+        print("Skipping volume fetch (can be done separately)")
 
         return {
             "message": "Sync complete",
