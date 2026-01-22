@@ -30,7 +30,7 @@ def get_projects(db: Session = Depends(get_db)):
             "name": l.name,
             "target_domain_url": l.target_domain_url,
             "keyword_count": len(l.keywords),
-            "selected_count": sum(1 for k in l.keywords if k.is_selected)
+            "selected_count": sum(1 for k in l.keywords if k.action_status == "approved")
         }
         for l in lists
     ]
