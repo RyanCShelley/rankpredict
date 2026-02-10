@@ -178,11 +178,17 @@ export const strategyDevAPI = {
     return response.data;
   },
 
-  createProject: async (name, coreTopics = null) => {
+  createProject: async (name, domain = null, coreTopics = null) => {
     const response = await api.post('/api/strategy-dev/projects', {
       name,
+      domain,
       core_topics: coreTopics
     });
+    return response.data;
+  },
+
+  getProjectStats: async (projectId) => {
+    const response = await api.get(`/api/strategy-dev/projects/${projectId}/stats`);
     return response.data;
   },
 

@@ -14,11 +14,21 @@ from datetime import datetime
 import asyncio
 
 from app.database import get_db, SessionLocal
-from app.models.database import StrategyProject, StrategyKeyword, User, KeywordList, Keyword
+from app.models.database import StrategyProject, StrategyKeyword, User, KeywordList, Keyword, Outline
 from app.api.auth import get_current_user_from_token
 from app.services import gsc_service, topic_service, buyer_journey_service
 from app.services.keywords_everywhere_service import fetch_keyword_volumes
 from app.config import TOPIC_SIMILARITY_THRESHOLD
+
+
+def get_project_for_write(db: Session, project_id: int, user: User) -> StrategyProject:
+    """Get a project for write operations - allows owner OR admin/master roles."""
+    project = db.query(StrategyProject).filter(StrategyProject.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if project.user_id != user.id and user.role not in ("admin", "master"):
+        raise HTTPException(status_code=403, detail="Access denied")
+    return project
 
 
 router = APIRouter()
@@ -32,11 +42,13 @@ class TopicInput(BaseModel):
 
 class CreateProjectRequest(BaseModel):
     name: str
+    domain: Optional[str] = None
     core_topics: Optional[List[TopicInput]] = None
 
 
 class UpdateProjectRequest(BaseModel):
     name: Optional[str] = None
+    domain: Optional[str] = None
     core_topics: Optional[List[TopicInput]] = None
     gsc_property_url: Optional[str] = None
 
@@ -44,10 +56,14 @@ class UpdateProjectRequest(BaseModel):
 class ProjectResponse(BaseModel):
     id: int
     name: str
+    domain: Optional[str] = None
     gsc_property_url: Optional[str]
     gsc_connected: bool
     core_topics: Optional[List[dict]]
     keyword_count: int
+    num_funnels: Optional[int] = None
+    num_terms: Optional[int] = None
+    num_briefs: Optional[int] = None
     sync_status: Optional[str]
     sync_message: Optional[str]
     created_at: datetime
@@ -96,26 +112,41 @@ async def list_projects(
     current_user: User = Depends(get_current_user_from_token),
     db: Session = Depends(get_db)
 ):
-    """List all strategy projects for the current user."""
-    projects = db.query(StrategyProject).filter(
-        StrategyProject.user_id == current_user.id
-    ).order_by(StrategyProject.updated_at.desc()).all()
+    """List all strategy projects (team-wide access)."""
+    projects = db.query(StrategyProject).order_by(StrategyProject.updated_at.desc()).all()
 
-    return [
-        ProjectResponse(
+    result = []
+    for p in projects:
+        # Compute inline stats from linked keyword lists
+        linked_lists = db.query(KeywordList).filter(KeywordList.project_id == p.id).all()
+        num_funnels = len(p.core_topics) if p.core_topics else 0
+        num_terms = sum(
+            db.query(Keyword).filter(Keyword.keyword_list_id == kl.id).count()
+            for kl in linked_lists
+        )
+        num_briefs = sum(
+            db.query(Outline).join(Keyword).filter(Keyword.keyword_list_id == kl.id).count()
+            for kl in linked_lists
+        )
+
+        result.append(ProjectResponse(
             id=p.id,
             name=p.name,
+            domain=p.domain,
             gsc_property_url=p.gsc_property_url,
             gsc_connected=bool(p.gsc_refresh_token),
             core_topics=p.core_topics,
             keyword_count=len(p.keywords),
+            num_funnels=num_funnels,
+            num_terms=num_terms,
+            num_briefs=num_briefs,
             sync_status=p.sync_status,
             sync_message=p.sync_message,
             created_at=p.created_at,
             updated_at=p.updated_at
-        )
-        for p in projects
-    ]
+        ))
+
+    return result
 
 
 @router.post("/projects")
@@ -133,6 +164,7 @@ async def create_project(
 
         project = StrategyProject(
             name=request.name,
+            domain=request.domain,
             user_id=current_user.id,
             core_topics=topics_data
         )
@@ -143,10 +175,14 @@ async def create_project(
         return {
             "id": project.id,
             "name": project.name,
+            "domain": project.domain,
             "gsc_property_url": project.gsc_property_url,
             "gsc_connected": bool(project.gsc_refresh_token),
             "core_topics": project.core_topics,
             "keyword_count": 0,
+            "num_funnels": 0,
+            "num_terms": 0,
+            "num_briefs": 0,
             "sync_status": project.sync_status,
             "sync_message": project.sync_message,
             "created_at": project.created_at.isoformat() if project.created_at else None,
@@ -167,10 +203,9 @@ async def get_project(
     current_user: User = Depends(get_current_user_from_token),
     db: Session = Depends(get_db)
 ):
-    """Get project details with keywords."""
+    """Get project details with keywords (team-wide access)."""
     project = db.query(StrategyProject).filter(
-        StrategyProject.id == project_id,
-        StrategyProject.user_id == current_user.id
+        StrategyProject.id == project_id
     ).first()
 
     if not project:
@@ -193,6 +228,7 @@ async def get_project(
         project=ProjectResponse(
             id=project.id,
             name=project.name,
+            domain=project.domain,
             gsc_property_url=project.gsc_property_url,
             gsc_connected=bool(project.gsc_refresh_token),
             core_topics=project.core_topics,
@@ -228,17 +264,14 @@ async def update_project(
     current_user: User = Depends(get_current_user_from_token),
     db: Session = Depends(get_db)
 ):
-    """Update project settings."""
-    project = db.query(StrategyProject).filter(
-        StrategyProject.id == project_id,
-        StrategyProject.user_id == current_user.id
-    ).first()
-
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    """Update project settings (owner or admin/master only)."""
+    project = get_project_for_write(db, project_id, current_user)
 
     if request.name is not None:
         project.name = request.name
+
+    if request.domain is not None:
+        project.domain = request.domain
 
     if request.core_topics is not None:
         project.core_topics = [t.model_dump() for t in request.core_topics]
@@ -252,6 +285,7 @@ async def update_project(
     return ProjectResponse(
         id=project.id,
         name=project.name,
+        domain=project.domain,
         gsc_property_url=project.gsc_property_url,
         gsc_connected=bool(project.gsc_refresh_token),
         core_topics=project.core_topics,
@@ -269,14 +303,8 @@ async def delete_project(
     current_user: User = Depends(get_current_user_from_token),
     db: Session = Depends(get_db)
 ):
-    """Delete a project and all its keywords."""
-    project = db.query(StrategyProject).filter(
-        StrategyProject.id == project_id,
-        StrategyProject.user_id == current_user.id
-    ).first()
-
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    """Delete a project and all its keywords (owner or admin/master only)."""
+    project = get_project_for_write(db, project_id, current_user)
 
     db.delete(project)
     db.commit()
@@ -325,30 +353,54 @@ async def gsc_callback(
                 project.gsc_refresh_token = tokens.get("refresh_token", "")
                 db.commit()
 
-        # Return HTML that closes the popup and notifies parent
-        return """
+        # Return styled HTML that closes the popup and notifies parent
+        from fastapi.responses import HTMLResponse
+        return HTMLResponse(content="""
         <html>
+        <head><style>
+            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; background: #f8fafc; }
+            .card { text-align: center; padding: 40px; background: white; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+            .check { width: 64px; height: 64px; border-radius: 50%; background: #22c55e; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 16px; }
+            .check svg { width: 32px; height: 32px; fill: none; stroke: white; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+            h2 { color: #1e293b; margin: 0 0 8px; }
+            p { color: #64748b; margin: 0; }
+        </style></head>
         <body>
-        <script>
-            if (window.opener) {
-                window.opener.postMessage({type: 'GSC_AUTH_SUCCESS'}, '*');
-                window.close();
-            } else {
-                document.body.innerHTML = '<h2>Connected! You can close this window.</h2>';
-            }
-        </script>
+            <div class="card">
+                <div class="check"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div>
+                <h2>GSC Connected!</h2>
+                <p>This window will close automatically...</p>
+            </div>
+            <script>
+                if (window.opener) {
+                    window.opener.postMessage({type: 'GSC_AUTH_SUCCESS'}, '*');
+                    setTimeout(() => window.close(), 2000);
+                }
+            </script>
         </body>
         </html>
-        """
+        """)
     except Exception as e:
-        return f"""
+        from fastapi.responses import HTMLResponse
+        return HTMLResponse(content=f"""
         <html>
+        <head><style>
+            body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; background: #f8fafc; }}
+            .card {{ text-align: center; padding: 40px; background: white; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); max-width: 400px; }}
+            .icon {{ width: 64px; height: 64px; border-radius: 50%; background: #ef4444; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 16px; }}
+            .icon svg {{ width: 32px; height: 32px; fill: none; stroke: white; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }}
+            h2 {{ color: #1e293b; margin: 0 0 8px; }}
+            p {{ color: #64748b; margin: 0; word-break: break-word; }}
+        </style></head>
         <body>
-        <h2>Error connecting to Google Search Console</h2>
-        <p>{str(e)}</p>
+            <div class="card">
+                <div class="icon"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></div>
+                <h2>Connection Failed</h2>
+                <p>{str(e)}</p>
+            </div>
         </body>
         </html>
-        """
+        """, status_code=400)
 
 
 @router.get("/gsc/sites", response_model=List[GscSiteResponse])
@@ -357,10 +409,9 @@ async def list_gsc_sites(
     current_user: User = Depends(get_current_user_from_token),
     db: Session = Depends(get_db)
 ):
-    """List available GSC sites for a connected project."""
+    """List available GSC sites for a connected project (team-wide access)."""
     project = db.query(StrategyProject).filter(
-        StrategyProject.id == project_id,
-        StrategyProject.user_id == current_user.id
+        StrategyProject.id == project_id
     ).first()
 
     if not project:
@@ -461,6 +512,16 @@ async def _do_sync(
             rows = [r for r in rows if r.get("avg_position") and r["avg_position"] <= max_position]
             print(f"[Background] Filtered to {len(rows)} rows with position <= {max_position} (was {original_count})")
 
+        # Deduplicate by query - keep the row with highest clicks per unique query
+        seen_queries = {}
+        for r in rows:
+            q = r["query"]
+            if q not in seen_queries or r.get("clicks", 0) > seen_queries[q].get("clicks", 0):
+                seen_queries[q] = r
+        deduped_count = len(rows)
+        rows = list(seen_queries.values())
+        print(f"[Background] Deduplicated from {deduped_count} to {len(rows)} unique queries")
+
         # Limit total rows to prevent memory issues (max 5,000)
         MAX_KEYWORDS = 5000
         if len(rows) > MAX_KEYWORDS:
@@ -492,6 +553,26 @@ async def _do_sync(
             topic_lookup = {r["keyword"]: r for r in topic_results}
             del topic_results
             print("[Background] Topic classification complete")
+
+            # Cap at 100 terms per topic - keep top 100 by clicks
+            topic_groups = {}
+            for keyword, data in topic_lookup.items():
+                t = data.get("assigned_topic")
+                if t:
+                    if t not in topic_groups:
+                        topic_groups[t] = []
+                    # Find clicks for this keyword from rows
+                    clicks = next((r.get("clicks", 0) for r in rows if r["query"] == keyword), 0)
+                    topic_groups[t].append((keyword, clicks))
+
+            for t, items in topic_groups.items():
+                if len(items) > 100:
+                    items.sort(key=lambda x: x[1], reverse=True)
+                    keep = set(kw for kw, _ in items[:100])
+                    removed = [kw for kw, _ in items[100:]]
+                    for kw in removed:
+                        del topic_lookup[kw]
+                    print(f"[Background] Capped topic '{t}' to 100 terms (removed {len(removed)})")
         else:
             print("[Background] No topics defined, skipping topic classification")
 
@@ -577,17 +658,11 @@ async def sync_project(
     db: Session = Depends(get_db)
 ):
     """
-    Start a background sync of GSC data.
+    Start a background sync of GSC data (owner or admin/master only).
     Returns immediately while sync runs in background.
     Check project.sync_status to monitor progress.
     """
-    project = db.query(StrategyProject).filter(
-        StrategyProject.id == project_id,
-        StrategyProject.user_id == current_user.id
-    ).first()
-
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project = get_project_for_write(db, project_id, current_user)
 
     if not project.gsc_refresh_token:
         raise HTTPException(status_code=400, detail="GSC not connected")
@@ -632,23 +707,13 @@ async def export_keywords_csv(
     current_user: User = Depends(get_current_user_from_token),
     db: Session = Depends(get_db)
 ):
-    """Export selected keywords to CSV."""
+    """Export selected keywords to CSV (team-wide access)."""
     keywords = db.query(StrategyKeyword).filter(
         StrategyKeyword.id.in_(keyword_ids)
     ).all()
 
     if not keywords:
         raise HTTPException(status_code=404, detail="No keywords found")
-
-    # Verify user owns the project
-    project_ids = set(kw.project_id for kw in keywords)
-    projects = db.query(StrategyProject).filter(
-        StrategyProject.id.in_(project_ids),
-        StrategyProject.user_id == current_user.id
-    ).all()
-
-    if len(projects) != len(project_ids):
-        raise HTTPException(status_code=403, detail="Access denied")
 
     # Generate CSV
     output = io.StringIO()
@@ -759,10 +824,9 @@ async def get_topic_graph_data(
     current_user: User = Depends(get_current_user_from_token),
     db: Session = Depends(get_db)
 ):
-    """Get graph visualization data for a topic."""
+    """Get graph visualization data for a topic (team-wide access)."""
     project = db.query(StrategyProject).filter(
-        StrategyProject.id == project_id,
-        StrategyProject.user_id == current_user.id
+        StrategyProject.id == project_id
     ).first()
 
     if not project:
@@ -826,10 +890,9 @@ async def fetch_project_volumes(
     current_user: User = Depends(get_current_user_from_token),
     db: Session = Depends(get_db)
 ):
-    """Fetch search volumes for project keywords using Keywords Everywhere."""
+    """Fetch search volumes for project keywords using Keywords Everywhere (team-wide access)."""
     project = db.query(StrategyProject).filter(
-        StrategyProject.id == project_id,
-        StrategyProject.user_id == current_user.id
+        StrategyProject.id == project_id
     ).first()
 
     if not project:
@@ -924,10 +987,9 @@ async def get_funnel_data(
     current_user: User = Depends(get_current_user_from_token),
     db: Session = Depends(get_db)
 ):
-    """Get funnel visualization data for a topic or all topics."""
+    """Get funnel visualization data for a topic or all topics (team-wide access)."""
     project = db.query(StrategyProject).filter(
-        StrategyProject.id == project_id,
-        StrategyProject.user_id == current_user.id
+        StrategyProject.id == project_id
     ).first()
 
     if not project:
@@ -1081,16 +1143,10 @@ async def generate_queries(
     current_user: User = Depends(get_current_user_from_token),
     db: Session = Depends(get_db)
 ):
-    """Generate AI-powered fan-out queries for a specific stage."""
+    """Generate AI-powered fan-out queries for a specific stage (owner or admin/master only)."""
     from app.services import query_fanning_service
 
-    project = db.query(StrategyProject).filter(
-        StrategyProject.id == project_id,
-        StrategyProject.user_id == current_user.id
-    ).first()
-
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project = get_project_for_write(db, project_id, current_user)
 
     # Get existing queries in this stage for the topic
     existing = db.query(StrategyKeyword).filter(
@@ -1150,10 +1206,9 @@ async def export_funnel_csv(
     current_user: User = Depends(get_current_user_from_token),
     db: Session = Depends(get_db)
 ):
-    """Export funnel data as CSV."""
+    """Export funnel data as CSV (team-wide access)."""
     project = db.query(StrategyProject).filter(
-        StrategyProject.id == project_id,
-        StrategyProject.user_id == current_user.id
+        StrategyProject.id == project_id
     ).first()
 
     if not project:
@@ -1209,7 +1264,7 @@ async def export_funnel_pdf(
     current_user: User = Depends(get_current_user_from_token),
     db: Session = Depends(get_db)
 ):
-    """Export funnel data as PDF."""
+    """Export funnel data as PDF (team-wide access)."""
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import letter, landscape
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -1218,8 +1273,7 @@ async def export_funnel_pdf(
     from reportlab.lib.enums import TA_CENTER, TA_LEFT
 
     project = db.query(StrategyProject).filter(
-        StrategyProject.id == project_id,
-        StrategyProject.user_id == current_user.id
+        StrategyProject.id == project_id
     ).first()
 
     if not project:
@@ -1371,3 +1425,35 @@ async def export_funnel_pdf(
         media_type="application/pdf",
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
+
+
+@router.get("/projects/{project_id}/stats")
+async def get_project_stats(
+    project_id: int,
+    current_user: User = Depends(get_current_user_from_token),
+    db: Session = Depends(get_db)
+):
+    """Get project stats: num_funnels, num_terms, num_briefs."""
+    project = db.query(StrategyProject).filter(
+        StrategyProject.id == project_id
+    ).first()
+
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    linked_lists = db.query(KeywordList).filter(KeywordList.project_id == project_id).all()
+    num_funnels = len(project.core_topics) if project.core_topics else 0
+    num_terms = sum(
+        db.query(Keyword).filter(Keyword.keyword_list_id == kl.id).count()
+        for kl in linked_lists
+    )
+    num_briefs = sum(
+        db.query(Outline).join(Keyword).filter(Keyword.keyword_list_id == kl.id).count()
+        for kl in linked_lists
+    )
+
+    return {
+        "num_funnels": num_funnels,
+        "num_terms": num_terms,
+        "num_briefs": num_briefs
+    }

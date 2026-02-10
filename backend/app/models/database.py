@@ -33,6 +33,7 @@ class KeywordList(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
     target_domain_url = Column(String, nullable=False)
+    project_id = Column(Integer, ForeignKey("strategy_projects.id"), nullable=True)
     # Client profile for forecast calculations
     client_vertical = Column(String, nullable=True)  # e.g., "legal", "healthcare"
     client_vertical_keywords = Column(JSON, nullable=True)  # List of core topic keywords
@@ -41,6 +42,7 @@ class KeywordList(Base):
 
     # Relationships
     keywords = relationship("Keyword", back_populates="keyword_list", cascade="all, delete-orphan")
+    project = relationship("StrategyProject", back_populates="keyword_lists")
 
 
 class Keyword(Base):
@@ -120,6 +122,7 @@ class StrategyProject(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
+    domain = Column(String, nullable=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     gsc_property_url = Column(String, nullable=True)  # Search Console property URL
     gsc_refresh_token = Column(String, nullable=True)  # OAuth refresh token (encrypted)
@@ -132,6 +135,7 @@ class StrategyProject(Base):
     # Relationships
     user = relationship("User")
     keywords = relationship("StrategyKeyword", back_populates="project", cascade="all, delete-orphan")
+    keyword_lists = relationship("KeywordList", back_populates="project")
 
 
 class StrategyKeyword(Base):

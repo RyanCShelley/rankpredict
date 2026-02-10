@@ -5,6 +5,8 @@ import OutlineBuilder from './pages/OutlineBuilder';
 import StrategyDev from './pages/StrategyDev';
 import AdminPanel from './pages/AdminPanel';
 import Login from './pages/Login';
+import Home from './pages/Home';
+import ProjectOverview from './pages/ProjectOverview';
 
 const ProtectedRoute = ({ children }) => {
   const { isAuthenticated, loading } = useAuth();
@@ -33,13 +35,19 @@ const Navigation = () => {
             </Link>
             <div className="flex space-x-4">
               <Link
+                to="/"
+                className="text-gray-700 hover:text-[#223540] px-3 py-2 rounded-md text-sm font-medium"
+              >
+                Projects
+              </Link>
+              <Link
                 to="/strategy-dev"
                 className="text-gray-700 hover:text-[#223540] px-3 py-2 rounded-md text-sm font-medium"
               >
                 Strategy Dev
               </Link>
               <Link
-                to="/"
+                to="/predict"
                 className="text-gray-700 hover:text-[#223540] px-3 py-2 rounded-md text-sm font-medium"
               >
                 Rank Predict
@@ -93,7 +101,9 @@ function App() {
                   <Navigation />
                   <main>
                     <Routes>
-                      <Route path="/" element={<StrategyDashboard />} />
+                      <Route path="/" element={<Home />} />
+                      <Route path="/project/:id" element={<ProjectOverview />} />
+                      <Route path="/predict" element={<StrategyDashboard />} />
                       <Route path="/outline" element={<OutlineBuilder />} />
                       <Route path="/strategy-dev" element={<StrategyDev />} />
                       <Route path="/admin" element={<AdminPanel />} />

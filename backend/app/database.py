@@ -95,6 +95,23 @@ def run_migrations():
                 conn.execute(text("ALTER TABLE strategy_projects ADD COLUMN sync_message VARCHAR"))
                 conn.commit()
 
+        # Add domain column if missing
+        with engine.connect() as conn:
+            if "domain" not in columns:
+                print("Adding domain column to strategy_projects...")
+                conn.execute(text("ALTER TABLE strategy_projects ADD COLUMN domain VARCHAR"))
+                conn.commit()
+
+    # Check if keyword_lists table exists
+    if "keyword_lists" in inspector.get_table_names():
+        columns = [col["name"] for col in inspector.get_columns("keyword_lists")]
+
+        with engine.connect() as conn:
+            if "project_id" not in columns:
+                print("Adding project_id column to keyword_lists...")
+                conn.execute(text("ALTER TABLE keyword_lists ADD COLUMN project_id INTEGER REFERENCES strategy_projects(id)"))
+                conn.commit()
+
     # Check if strategy_keywords table exists
     if "strategy_keywords" in inspector.get_table_names():
         columns = [col["name"] for col in inspector.get_columns("strategy_keywords")]

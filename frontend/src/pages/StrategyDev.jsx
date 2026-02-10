@@ -29,12 +29,14 @@ export default function StrategyDev() {
   // New project form
   const [showNewProject, setShowNewProject] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
+  const [newDomain, setNewDomain] = useState('');
   const [newTopics, setNewTopics] = useState([{ name: '', keywords: '' }]);
 
   // Edit project form
   const [showEditProject, setShowEditProject] = useState(false);
   const [editProjectId, setEditProjectId] = useState(null);
   const [editProjectName, setEditProjectName] = useState('');
+  const [editDomain, setEditDomain] = useState('');
   const [editTopics, setEditTopics] = useState([{ name: '', keywords: '' }]);
 
   // GSC state
@@ -79,11 +81,28 @@ export default function StrategyDev() {
 
   // Listen for GSC OAuth callback
   useEffect(() => {
-    const handleMessage = (event) => {
+    const handleMessage = async (event) => {
       if (event.data?.type === 'GSC_AUTH_SUCCESS') {
-        loadProjects();
+        // Reload projects to get fresh GSC status
+        const freshProjects = await strategyDevAPI.getProjects();
+        setProjects(freshProjects);
+
+        // Update selectedProject with fresh data and auto-show site selection
         if (selectedProject) {
-          loadGscSites();
+          const freshProject = freshProjects.find(p => p.id === selectedProject.id);
+          if (freshProject) {
+            setSelectedProject(freshProject);
+            // Auto-trigger site selection if GSC is now connected
+            if (freshProject.gsc_connected) {
+              try {
+                const sites = await strategyDevAPI.listGscSites(freshProject.id);
+                setGscSites(sites);
+                setShowSiteSelect(true);
+              } catch (err) {
+                console.error('Failed to auto-load GSC sites:', err);
+              }
+            }
+          }
         }
       }
     };
@@ -154,11 +173,12 @@ export default function StrategyDev() {
       }));
 
     try {
-      const project = await strategyDevAPI.createProject(newProjectName, topics.length ? topics : null);
+      const project = await strategyDevAPI.createProject(newProjectName, newDomain || null, topics.length ? topics : null);
       setProjects([project, ...projects]);
       setSelectedProject(project);
       setShowNewProject(false);
       setNewProjectName('');
+      setNewDomain('');
       setNewTopics([{ name: '', keywords: '' }]);
     } catch (err) {
       console.error('Failed to create project:', err);
@@ -268,6 +288,7 @@ export default function StrategyDev() {
   const openEditProject = (project) => {
     setEditProjectId(project.id);
     setEditProjectName(project.name);
+    setEditDomain(project.domain || '');
     // Convert core_topics to editable format
     if (project.core_topics && project.core_topics.length > 0) {
       setEditTopics(project.core_topics.map(t => ({
@@ -294,6 +315,7 @@ export default function StrategyDev() {
     try {
       const updated = await strategyDevAPI.updateProject(editProjectId, {
         name: editProjectName,
+        domain: editDomain || null,
         core_topics: topics.length ? topics : null
       });
       // Update projects list
@@ -965,6 +987,19 @@ export default function StrategyDev() {
 
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Domain
+                </label>
+                <input
+                  type="text"
+                  value={newDomain}
+                  onChange={(e) => setNewDomain(e.target.value)}
+                  className="w-full border rounded px-3 py-2"
+                  placeholder="e.g., example.com"
+                />
+              </div>
+
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
                   Core Topics (Optional)
                 </label>
                 <p className="text-xs text-gray-500 mb-2">
@@ -1050,6 +1085,19 @@ export default function StrategyDev() {
                   onChange={(e) => setEditProjectName(e.target.value)}
                   className="w-full border rounded px-3 py-2"
                   required
+                />
+              </div>
+
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Domain
+                </label>
+                <input
+                  type="text"
+                  value={editDomain}
+                  onChange={(e) => setEditDomain(e.target.value)}
+                  className="w-full border rounded px-3 py-2"
+                  placeholder="e.g., example.com"
                 />
               </div>
 
