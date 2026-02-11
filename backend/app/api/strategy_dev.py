@@ -880,7 +880,8 @@ async def add_keywords_to_list(
             kw = Keyword(
                 keyword_list_id=keyword_list.id,
                 keyword=sk.query,
-                volume=sk.volume
+                volume=sk.volume,
+                target_url=sk.page_url
             )
             db.add(kw)
             added += 1

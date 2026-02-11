@@ -649,9 +649,19 @@ const StrategyDashboard = () => {
                     <button
                       onClick={handleScoreKeywords}
                       disabled={scoring || selectedForScoring.size === 0}
-                      className="px-3 py-1.5 bg-[#223540] text-white rounded text-xs hover:bg-[#00a99d] disabled:opacity-50"
+                      className="px-3 py-1.5 bg-[#223540] text-white rounded text-xs hover:bg-[#00a99d] disabled:opacity-50 flex items-center gap-1.5"
                     >
-                      {scoring ? 'Scoring...' : `Score${selectedForScoring.size > 0 ? ` (${selectedForScoring.size})` : ''}`}
+                      {scoring ? (
+                        <>
+                          <svg className="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24" fill="none">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                          </svg>
+                          Scoring...
+                        </>
+                      ) : (
+                        `Score${selectedForScoring.size > 0 ? ` (${selectedForScoring.size})` : ''}`
+                      )}
                     </button>
                     <button
                       onClick={handleExport}
@@ -750,6 +760,16 @@ const StrategyDashboard = () => {
                     </button>
                   )}
                 </div>
+
+                {scoring && (
+                  <div className="mt-3 flex items-center gap-2">
+                    <svg className="animate-spin h-4 w-4 text-blue-600" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                    </svg>
+                    <span className="text-sm text-blue-600">Scoring keywords... this may take a minute</span>
+                  </div>
+                )}
               </div>
 
               <div className="overflow-x-auto">
@@ -769,6 +789,9 @@ const StrategyDashboard = () => {
                         onClick={() => handleSort('keyword')}
                       >
                         Keyword<SortIndicator column="keyword" />
+                      </th>
+                      <th className="px-2 py-2 text-left font-medium text-gray-600">
+                        URL
                       </th>
                       <th
                         className="px-2 py-2 text-right font-medium text-gray-600 cursor-pointer hover:bg-gray-100 w-20"
@@ -815,6 +838,15 @@ const StrategyDashboard = () => {
                             />
                           </td>
                           <td className="px-2 py-1.5 font-medium">{keyword.keyword}</td>
+                          <td className="px-2 py-1.5 text-gray-500 text-xs max-w-[200px] truncate" title={keyword.target_url || ''}>
+                            {keyword.target_url ? (
+                              <a href={keyword.target_url} target="_blank" rel="noopener noreferrer" className="hover:text-blue-600 hover:underline">
+                                {keyword.target_url.replace(/^https?:\/\/(www\.)?/, '').split('?')[0]}
+                              </a>
+                            ) : (
+                              <span className="text-gray-300">-</span>
+                            )}
+                          </td>
                           <td className="px-2 py-1.5 text-right text-gray-600">
                             {formatVolume(keyword.volume)}
                           </td>
