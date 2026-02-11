@@ -109,7 +109,7 @@ def run_migrations():
         with engine.connect() as conn:
             if "project_id" not in columns:
                 print("Adding project_id column to keyword_lists...")
-                conn.execute(text("ALTER TABLE keyword_lists ADD COLUMN project_id INTEGER REFERENCES strategy_projects(id)"))
+                conn.execute(text("ALTER TABLE keyword_lists ADD COLUMN project_id INTEGER"))
                 conn.commit()
 
     # Check if strategy_keywords table exists
