@@ -33,6 +33,7 @@ const StrategyDashboard = () => {
   const [clientVerticalKeywords, setClientVerticalKeywords] = useState('');
   const [loading, setLoading] = useState(false);
   const [scoring, setScoring] = useState(false);
+  const [scoringProgress, setScoringProgress] = useState(null); // { current, total, keyword }
   const [deletingList, setDeletingList] = useState(false);
   const [fetchingVolumes, setFetchingVolumes] = useState(false);
   const [error, setError] = useState('');
@@ -120,17 +121,23 @@ const StrategyDashboard = () => {
     if (!selectedList || selectedForScoring.size === 0) return;
 
     setScoring(true);
+    setScoringProgress(null);
     setError('');
 
     try {
       const keywordIds = Array.from(selectedForScoring);
-      await strategyAPI.scoreSelectedKeywords(selectedList.id, keywordIds);
+      await strategyAPI.scoreSelectedKeywords(selectedList.id, keywordIds, (event) => {
+        if (event.type === 'progress') {
+          setScoringProgress({ current: event.current, total: event.total, keyword: event.keyword });
+        }
+      });
       await loadList(selectedList.id);
       setSelectedForScoring(new Set());
     } catch (err) {
-      setError('Error scoring keywords: ' + (err.response?.data?.detail || err.message));
+      setError('Error scoring keywords: ' + (err.message || 'Network Error'));
     } finally {
       setScoring(false);
+      setScoringProgress(null);
     }
   };
 
@@ -669,7 +676,7 @@ const StrategyDashboard = () => {
                             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
                           </svg>
-                          Scoring...
+                          {scoringProgress ? `${scoringProgress.current}/${scoringProgress.total}` : 'Scoring...'}
                         </>
                       ) : (
                         `Score${selectedForScoring.size > 0 ? ` (${selectedForScoring.size})` : ''}`
@@ -779,7 +786,11 @@ const StrategyDashboard = () => {
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
                     </svg>
-                    <span className="text-sm text-blue-600">Scoring keywords... this may take a minute</span>
+                    <span className="text-sm text-blue-600">
+                      {scoringProgress
+                        ? `Scoring ${scoringProgress.current}/${scoringProgress.total}: "${scoringProgress.keyword}"`
+                        : 'Scoring keywords... this may take a minute'}
+                    </span>
                   </div>
                 )}
               </div>

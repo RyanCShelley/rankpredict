@@ -91,11 +91,43 @@ export const strategyAPI = {
     return response.data;
   },
 
-  scoreSelectedKeywords: async (listId, keywordIds) => {
-    const response = await api.post(`/api/strategy/lists/${listId}/score-selected`, {
-      keyword_ids: keywordIds
+  scoreSelectedKeywords: async (listId, keywordIds, onProgress) => {
+    const token = Cookies.get('auth_token');
+    const response = await fetch(`${API_BASE_URL}/api/strategy/lists/${listId}/score-selected`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ keyword_ids: keywordIds }),
     });
-    return response.data;
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({ detail: response.statusText }));
+      throw new Error(err.detail || 'Scoring failed');
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      const lines = buffer.split('\n');
+      buffer = lines.pop(); // keep incomplete line in buffer
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const event = JSON.parse(line.slice(6));
+            if (onProgress) onProgress(event);
+          } catch { /* ignore parse errors */ }
+        }
+      }
+    }
   },
 
   updateList: async (listId, updates) => {

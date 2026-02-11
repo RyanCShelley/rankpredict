@@ -2,8 +2,9 @@
 Strategy Dashboard API endpoints
 """
 from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 from datetime import datetime
 from app.database import get_db
 from app.models.database import KeywordList, Keyword, KeywordAnalysis, StrategyProject
@@ -585,23 +586,16 @@ def update_keyword_list(
     }
 
 
-@router.post("/lists/{list_id}/score-selected", response_model=ScoreKeywordsResponse)
+@router.post("/lists/{list_id}/score-selected")
 def score_selected_keywords(
     list_id: int,
     request: ScoreSpecificKeywordsRequest,
     db: Session = Depends(get_db)
 ):
-    """Score specific keywords by ID"""
+    """Score specific keywords by ID, streaming progress via SSE."""
     keyword_list = db.query(KeywordList).filter(KeywordList.id == list_id).first()
     if not keyword_list:
         raise HTTPException(status_code=404, detail="Keyword list not found")
-
-    serp_service = get_serp_service()
-    semantic_service = get_semantic_service()
-    forecast_service = get_forecast_service()
-
-    keywords_scored = 0
-    keyword_responses = []
 
     # Get only the keywords that were requested
     keywords_to_score = db.query(Keyword).filter(
@@ -609,134 +603,110 @@ def score_selected_keywords(
         Keyword.keyword_list_id == list_id
     ).all()
 
-    for keyword_obj in keywords_to_score:
-        try:
-            keyword = keyword_obj.keyword
+    total = len(keywords_to_score)
 
-            # Check if we have cached analysis
-            cached_analysis = db.query(KeywordAnalysis).filter(
-                KeywordAnalysis.keyword == keyword
-            ).order_by(KeywordAnalysis.analyzed_at.desc()).first()
+    def generate():
+        serp_service = get_serp_service()
+        semantic_service = get_semantic_service()
+        forecast_service = get_forecast_service()
 
-            if cached_analysis:
-                serp_medians = cached_analysis.serp_medians or {}
-                enriched_results = cached_analysis.serp_data.get("enriched_results", [])
-                # Fix for cached data with buggy flesch/word_count values
-                if serp_medians.get("flesch_reading_ease_score", 0) < 10:
-                    serp_medians["flesch_reading_ease_score"] = 55.0
-                if serp_medians.get("word_count", 0) < 100:
-                    serp_medians["word_count"] = 1500.0
-            else:
-                serp_data = serp_service.fetch_serp_data(keyword, num_results=10)
-                organic_results = serp_service.extract_organic_results(serp_data)
-                enriched_results = serp_service.enrich_serp_results(organic_results, limit=10)
+        keywords_scored = 0
 
-                semantic_scores = semantic_service.compute_semantic_scores_for_serp(
-                    enriched_results,
-                    query=keyword,
-                    html_column="raw_html"
-                )
+        for idx, keyword_obj in enumerate(keywords_to_score):
+            # Send progress event
+            yield f"data: {json.dumps({'type': 'progress', 'current': idx + 1, 'total': total, 'keyword': keyword_obj.keyword})}\n\n"
 
-                for i, score in enumerate(semantic_scores):
-                    if i < len(enriched_results):
-                        enriched_results[i]["semantic_topic_score"] = score
+            try:
+                keyword = keyword_obj.keyword
 
-                serp_medians = serp_service.calculate_serp_medians(enriched_results)
-                serp_medians["semantic_topic_score"] = sum(semantic_scores[:10]) / len(semantic_scores[:10]) if semantic_scores else 0.7
+                # Check if we have cached analysis
+                cached_analysis = db.query(KeywordAnalysis).filter(
+                    KeywordAnalysis.keyword == keyword
+                ).order_by(KeywordAnalysis.analyzed_at.desc()).first()
 
-                # Strip raw_html to prevent OOM on large inserts
-                analysis = KeywordAnalysis(
-                    keyword_id=keyword_obj.id,
+                if cached_analysis:
+                    serp_medians = cached_analysis.serp_medians or {}
+                    enriched_results = cached_analysis.serp_data.get("enriched_results", [])
+                    if serp_medians.get("flesch_reading_ease_score", 0) < 10:
+                        serp_medians["flesch_reading_ease_score"] = 55.0
+                    if serp_medians.get("word_count", 0) < 100:
+                        serp_medians["word_count"] = 1500.0
+                else:
+                    serp_data = serp_service.fetch_serp_data(keyword, num_results=10)
+                    organic_results = serp_service.extract_organic_results(serp_data)
+                    enriched_results = serp_service.enrich_serp_results(organic_results, limit=10)
+
+                    semantic_scores = semantic_service.compute_semantic_scores_for_serp(
+                        enriched_results,
+                        query=keyword,
+                        html_column="raw_html"
+                    )
+
+                    for i, score in enumerate(semantic_scores):
+                        if i < len(enriched_results):
+                            enriched_results[i]["semantic_topic_score"] = score
+
+                    serp_medians = serp_service.calculate_serp_medians(enriched_results)
+                    serp_medians["semantic_topic_score"] = sum(semantic_scores[:10]) / len(semantic_scores[:10]) if semantic_scores else 0.7
+
+                    analysis = KeywordAnalysis(
+                        keyword_id=keyword_obj.id,
+                        keyword=keyword,
+                        serp_data={"enriched_results": strip_html_for_storage(enriched_results)},
+                        serp_medians=serp_medians,
+                        semantic_scores=semantic_scores
+                    )
+                    db.add(analysis)
+
+                target_domain_url = keyword_list.target_domain_url
+
+                forecast = forecast_service.forecast_keyword_rank_likelihood(
                     keyword=keyword,
-                    serp_data={"enriched_results": strip_html_for_storage(enriched_results)},
+                    enriched_results=enriched_results,
                     serp_medians=serp_medians,
-                    semantic_scores=semantic_scores
-                )
-                db.add(analysis)
-
-            target_domain_url = keyword_list.target_domain_url
-
-            forecast = forecast_service.forecast_keyword_rank_likelihood(
-                keyword=keyword,
-                enriched_results=enriched_results,
-                serp_medians=serp_medians,
-                target_domain_url=target_domain_url
-            )
-
-            rankability_score = forecast["forecast_pct"]["baseline_median_pct"] / 100.0
-            opportunity_tier = forecast.get("forecast_tiers", {}).get("baseline_median_tier", "T4_NOT_WORTH_IT")
-
-            keyword_obj.rankability_score = rankability_score
-            keyword_obj.opportunity_tier = opportunity_tier
-
-            keywords_scored += 1
-
-            domain_fit_response = None
-            intent_fit_response = None
-            client_forecast_response = None
-
-            if keyword_list.client_vertical:
-                enhanced_forecast = forecast_service.analyze_keyword_with_client_profile(
-                    keyword=keyword,
-                    forecast_result=forecast,
-                    client_vertical=keyword_list.client_vertical,
-                    client_vertical_keywords=keyword_list.client_vertical_keywords
+                    target_domain_url=target_domain_url
                 )
 
-                if "domain_fit" in enhanced_forecast:
-                    domain_fit_response = FitScore(
-                        score=enhanced_forecast["domain_fit"]["score"],
-                        explanation=enhanced_forecast["domain_fit"]["explanation"]
+                rankability_score = forecast["forecast_pct"]["baseline_median_pct"] / 100.0
+                opportunity_tier = forecast.get("forecast_tiers", {}).get("baseline_median_tier", "T4_NOT_WORTH_IT")
+
+                keyword_obj.rankability_score = rankability_score
+                keyword_obj.opportunity_tier = opportunity_tier
+
+                keywords_scored += 1
+
+                if keyword_list.client_vertical:
+                    enhanced_forecast = forecast_service.analyze_keyword_with_client_profile(
+                        keyword=keyword,
+                        forecast_result=forecast,
+                        client_vertical=keyword_list.client_vertical,
+                        client_vertical_keywords=keyword_list.client_vertical_keywords
                     )
 
-                if "intent_fit" in enhanced_forecast:
-                    intent_fit_response = FitScore(
-                        score=enhanced_forecast["intent_fit"]["score"],
-                        explanation=enhanced_forecast["intent_fit"]["explanation"]
-                    )
+                    keyword_obj.domain_fit = enhanced_forecast.get("domain_fit", {}).get("score")
+                    keyword_obj.intent_fit = enhanced_forecast.get("intent_fit", {}).get("score")
+                    keyword_obj.client_forecast = enhanced_forecast.get("client_forecast", {}).get("score")
+                    keyword_obj.forecast_tier = enhanced_forecast.get("client_forecast", {}).get("tier")
 
-                if "client_forecast" in enhanced_forecast:
-                    client_forecast_response = ClientForecast(
-                        score=enhanced_forecast["client_forecast"]["score"],
-                        tier=enhanced_forecast["client_forecast"]["tier"],
-                        recommendation=enhanced_forecast["client_forecast"]["recommendation"]
-                    )
+                keyword_obj.scored_at = datetime.utcnow()
+                db.commit()
 
-                keyword_obj.domain_fit = enhanced_forecast.get("domain_fit", {}).get("score")
-                keyword_obj.intent_fit = enhanced_forecast.get("intent_fit", {}).get("score")
-                keyword_obj.client_forecast = enhanced_forecast.get("client_forecast", {}).get("score")
-                keyword_obj.forecast_tier = enhanced_forecast.get("client_forecast", {}).get("tier")
+            except Exception as e:
+                print(f"Error scoring keyword '{keyword_obj.keyword}': {e}")
+                yield f"data: {json.dumps({'type': 'error', 'keyword': keyword_obj.keyword, 'error': str(e)})}\n\n"
+                continue
 
-            keyword_obj.scored_at = datetime.utcnow()
+        # Send completion event
+        yield f"data: {json.dumps({'type': 'done', 'keywords_scored': keywords_scored, 'total': total})}\n\n"
 
-            keyword_responses.append(KeywordResponse(
-                id=keyword_obj.id,
-                keyword=keyword_obj.keyword,
-                volume=keyword_obj.volume,
-                rankability_score=keyword_obj.rankability_score,
-                opportunity_tier=keyword_obj.opportunity_tier,
-                forecast_pct=forecast.get("forecast_pct", {}).get("baseline_median_pct"),
-                tier_explanation=forecast.get("tier_explanation"),
-                domain_fit=domain_fit_response,
-                intent_fit=intent_fit_response,
-                client_forecast=client_forecast_response,
-                is_selected=keyword_obj.is_selected,
-                action_status=keyword_obj.action_status or "none",
-                content_type=keyword_obj.content_type,
-                target_url=keyword_obj.target_url,
-                has_outline=len(keyword_obj.outlines) > 0,
-                created_at=keyword_obj.created_at
-            ))
-        except Exception as e:
-            print(f"Error scoring keyword '{keyword_obj.keyword}': {e}")
-            continue
-
-    db.commit()
-
-    return ScoreKeywordsResponse(
-        list_id=list_id,
-        keywords_scored=keywords_scored,
-        keywords=keyword_responses
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        }
     )
 
 
