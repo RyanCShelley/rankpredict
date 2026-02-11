@@ -127,6 +127,7 @@ class StrategyProject(Base):
     gsc_property_url = Column(String, nullable=True)  # Search Console property URL
     gsc_refresh_token = Column(String, nullable=True)  # OAuth refresh token (encrypted)
     core_topics = Column(JSON, nullable=True)  # List of {name: str, keywords: list[str]}
+    persona = Column(JSON, nullable=True)  # {description: str, expanded: str}
     sync_status = Column(String, nullable=True)  # "syncing", "complete", "error", or null
     sync_message = Column(String, nullable=True)  # Status message or error details
     created_at = Column(DateTime(timezone=True), server_default=func.now())

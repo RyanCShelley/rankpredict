@@ -102,6 +102,12 @@ def run_migrations():
                 conn.execute(text("ALTER TABLE strategy_projects ADD COLUMN domain VARCHAR"))
                 conn.commit()
 
+            # Add persona column if missing
+            if "persona" not in columns:
+                print("Adding persona column to strategy_projects...")
+                conn.execute(text("ALTER TABLE strategy_projects ADD COLUMN persona JSON"))
+                conn.commit()
+
     # Check if keyword_lists table exists
     if "keyword_lists" in inspector.get_table_names():
         columns = [col["name"] for col in inspector.get_columns("keyword_lists")]

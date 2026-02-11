@@ -9,6 +9,13 @@ export default function ProjectOverview() {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  // Persona modal
+  const [showPersona, setShowPersona] = useState(false);
+  const [personaDesc, setPersonaDesc] = useState('');
+  const [personaExpanded, setPersonaExpanded] = useState('');
+  const [personaGenerating, setPersonaGenerating] = useState(false);
+  const [personaSaving, setPersonaSaving] = useState(false);
+
   // Edit modal
   const [showEdit, setShowEdit] = useState(false);
   const [editName, setEditName] = useState('');
@@ -84,6 +91,43 @@ export default function ProjectOverview() {
     } catch (err) {
       console.error('Failed to get auth URL:', err);
       alert('Failed to connect to Google');
+    }
+  };
+
+  const openPersonaModal = () => {
+    setPersonaDesc(project?.persona?.description || '');
+    setPersonaExpanded(project?.persona?.expanded || '');
+    setShowPersona(true);
+  };
+
+  const handleGeneratePersona = async () => {
+    if (!personaDesc.trim()) return;
+    setPersonaGenerating(true);
+    try {
+      const { persona } = await strategyDevAPI.generatePersona(id, personaDesc.trim());
+      setPersonaExpanded(persona.expanded);
+    } catch (err) {
+      console.error('Failed to generate persona:', err);
+      alert('Failed to generate persona');
+    } finally {
+      setPersonaGenerating(false);
+    }
+  };
+
+  const handleSavePersona = async () => {
+    setPersonaSaving(true);
+    try {
+      const persona = personaDesc.trim()
+        ? { description: personaDesc.trim(), expanded: personaExpanded }
+        : null;
+      await strategyDevAPI.updateProject(id, { persona });
+      setProject({ ...project, persona });
+      setShowPersona(false);
+    } catch (err) {
+      console.error('Failed to save persona:', err);
+      alert('Failed to save persona');
+    } finally {
+      setPersonaSaving(false);
     }
   };
 
@@ -208,6 +252,36 @@ export default function ProjectOverview() {
         </div>
       </div>
 
+      {/* Persona section */}
+      <div className="bg-white rounded-lg shadow-sm border p-6 mb-8">
+        <div className="flex justify-between items-start mb-2">
+          <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Persona</h2>
+          {project.persona ? (
+            <div className="flex gap-2">
+              <button
+                onClick={openPersonaModal}
+                className="text-xs text-blue-600 hover:underline"
+              >
+                Edit
+              </button>
+            </div>
+          ) : null}
+        </div>
+        {project.persona?.expanded ? (
+          <div>
+            <p className="text-xs text-gray-500 mb-1">{project.persona.description}</p>
+            <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{project.persona.expanded}</p>
+          </div>
+        ) : (
+          <button
+            onClick={openPersonaModal}
+            className="text-sm bg-[#223540] text-white px-4 py-2 rounded-lg hover:bg-[#2d4654]"
+          >
+            Add Persona
+          </button>
+        )}
+      </div>
+
       {/* Nav cards */}
       <div className="grid grid-cols-3 gap-6">
         {navCards.map(card => (
@@ -222,6 +296,79 @@ export default function ProjectOverview() {
           </Link>
         ))}
       </div>
+
+      {/* Persona Modal */}
+      {showPersona && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
+            <h2 className="text-lg font-bold mb-4">
+              {project.persona ? 'Edit Persona' : 'Add Persona'}
+            </h2>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Brief Description
+              </label>
+              <textarea
+                value={personaDesc}
+                onChange={(e) => setPersonaDesc(e.target.value)}
+                className="w-full border rounded px-3 py-2 text-sm"
+                rows={3}
+                placeholder="e.g., RV owners looking for comfortable custom-fit mattresses"
+              />
+            </div>
+
+            <button
+              onClick={handleGeneratePersona}
+              disabled={personaGenerating || !personaDesc.trim()}
+              className="mb-4 text-sm bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              {personaGenerating ? (
+                <>
+                  <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  Generating...
+                </>
+              ) : (
+                'Generate with AI'
+              )}
+            </button>
+
+            {personaExpanded && (
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Expanded Persona
+                </label>
+                <textarea
+                  value={personaExpanded}
+                  onChange={(e) => setPersonaExpanded(e.target.value)}
+                  className="w-full border rounded px-3 py-2 text-sm"
+                  rows={8}
+                />
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowPersona(false)}
+                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSavePersona}
+                disabled={personaSaving}
+                className="px-4 py-2 bg-[#223540] text-white rounded hover:bg-[#2d4654] disabled:opacity-50"
+              >
+                {personaSaving ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Edit Modal */}
       {showEdit && (

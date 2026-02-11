@@ -24,7 +24,8 @@ def get_active_provider():
 async def generate_stage_queries(
     stage: str,
     topic: str,
-    existing_queries: List[str]
+    existing_queries: List[str],
+    persona: Optional[dict] = None
 ) -> Tuple[List[str], str]:
     """
     Generate fan-out queries specific to a buyer journey stage.
@@ -51,13 +52,21 @@ async def generate_stage_queries(
 
     context = stage_context.get(stage, "")
 
+    persona_block = ""
+    if persona and persona.get("expanded"):
+        persona_block = f"""
+Target Persona: {persona['expanded']}
+
+Generate queries that this persona would actually search for, using their language and addressing their specific needs.
+"""
+
     prompt = f"""You are an expert at generating search queries for SEO content strategy.
 Your task is to generate new search queries that fit a specific buyer journey stage.
 
 Stage: {stage}
 Stage Description: {context}
 Topic: {topic}
-
+{persona_block}
 Generate 6-8 NEW search queries that:
 1. Are highly relevant to the topic "{topic}"
 2. Match the intent of the buyer journey stage "{stage}"

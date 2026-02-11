@@ -51,6 +51,7 @@ class UpdateProjectRequest(BaseModel):
     domain: Optional[str] = None
     core_topics: Optional[List[TopicInput]] = None
     gsc_property_url: Optional[str] = None
+    persona: Optional[dict] = None
 
 
 class ProjectResponse(BaseModel):
@@ -60,6 +61,7 @@ class ProjectResponse(BaseModel):
     gsc_property_url: Optional[str]
     gsc_connected: bool
     core_topics: Optional[List[dict]]
+    persona: Optional[dict] = None
     keyword_count: int
     num_funnels: Optional[int] = None
     num_terms: Optional[int] = None
@@ -136,6 +138,7 @@ async def list_projects(
             gsc_property_url=p.gsc_property_url,
             gsc_connected=bool(p.gsc_refresh_token),
             core_topics=p.core_topics,
+            persona=p.persona,
             keyword_count=len(p.keywords),
             num_funnels=num_funnels,
             num_terms=num_terms,
@@ -179,6 +182,7 @@ async def create_project(
             "gsc_property_url": project.gsc_property_url,
             "gsc_connected": bool(project.gsc_refresh_token),
             "core_topics": project.core_topics,
+            "persona": project.persona,
             "keyword_count": 0,
             "num_funnels": 0,
             "num_terms": 0,
@@ -232,6 +236,7 @@ async def get_project(
             gsc_property_url=project.gsc_property_url,
             gsc_connected=bool(project.gsc_refresh_token),
             core_topics=project.core_topics,
+            persona=project.persona,
             keyword_count=len(project.keywords),
             sync_status=project.sync_status,
             sync_message=project.sync_message,
@@ -279,6 +284,9 @@ async def update_project(
     if request.gsc_property_url is not None:
         project.gsc_property_url = request.gsc_property_url
 
+    if request.persona is not None:
+        project.persona = request.persona
+
     db.commit()
     db.refresh(project)
 
@@ -289,12 +297,64 @@ async def update_project(
         gsc_property_url=project.gsc_property_url,
         gsc_connected=bool(project.gsc_refresh_token),
         core_topics=project.core_topics,
+        persona=project.persona,
         keyword_count=len(project.keywords),
         sync_status=project.sync_status,
         sync_message=project.sync_message,
         created_at=project.created_at,
         updated_at=project.updated_at
     )
+
+
+class GeneratePersonaRequest(BaseModel):
+    description: str
+
+
+@router.post("/projects/{project_id}/generate-persona")
+async def generate_persona(
+    project_id: int,
+    request: GeneratePersonaRequest,
+    current_user: User = Depends(get_current_user_from_token),
+    db: Session = Depends(get_db)
+):
+    """Generate an expanded persona profile from a brief description."""
+    from app.services.query_fanning_service import get_active_provider, _call_claude, _call_openai
+
+    project = get_project_for_write(db, project_id, current_user)
+
+    provider = get_active_provider()
+    if not provider:
+        raise HTTPException(status_code=500, detail="No LLM API key configured.")
+
+    prompt = f"""You are an expert SEO strategist and audience researcher.
+Given a brief persona description, expand it into a detailed persona profile for SEO content strategy.
+
+Brief description: {request.description}
+
+Create a comprehensive persona profile covering:
+1. **Demographics & Psychographics**: Age range, income level, lifestyle, values, and motivations
+2. **Pain Points & Needs**: What problems they're trying to solve, what frustrations they experience
+3. **Search Behavior**: How they search, what devices they use, what types of queries they make
+4. **Decision Factors**: What influences their purchasing decisions, what they prioritize
+5. **Language & Terminology**: Specific words, phrases, and jargon this persona uses
+
+Write the profile in a natural, detailed paragraph format (not bullet points). Keep it to 150-200 words.
+Return ONLY the persona profile text, no headers or formatting."""
+
+    try:
+        if provider == "claude":
+            expanded = _call_claude(prompt)
+        else:
+            expanded = _call_openai(prompt)
+
+        persona = {"description": request.description, "expanded": expanded.strip()}
+        project.persona = persona
+        db.commit()
+
+        return {"persona": persona}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate persona: {str(e)}")
 
 
 @router.delete("/projects/{project_id}")
@@ -1180,7 +1240,8 @@ async def generate_queries(
         new_queries, reasoning = await query_fanning_service.generate_stage_queries(
             stage=request.stage,
             topic=request.topic,
-            existing_queries=existing_queries
+            existing_queries=existing_queries,
+            persona=project.persona
         )
 
         # Add new queries to the database

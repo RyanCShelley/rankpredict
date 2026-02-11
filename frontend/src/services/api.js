@@ -312,6 +312,12 @@ export const strategyDevAPI = {
     return response.data;
   },
 
+  // Persona
+  generatePersona: async (projectId, description) => {
+    const response = await api.post(`/api/strategy-dev/projects/${projectId}/generate-persona`, { description });
+    return response.data;
+  },
+
   // Delete Multiple Keywords
   deleteKeywordsBulk: async (keywordIds) => {
     const params = keywordIds.map(id => `keyword_ids=${id}`).join('&');
