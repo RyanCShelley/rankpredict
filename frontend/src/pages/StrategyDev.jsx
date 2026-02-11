@@ -760,7 +760,7 @@ export default function StrategyDev() {
                       <span className="bg-gray-100 text-gray-700 px-3 py-1 rounded-full text-sm">
                         {t.name}
                       </span>
-                      {uniqueTopics.includes(t.name) && (
+                      {(projectData?.keywords?.length > 0) && (
                         <button
                           onClick={() => handleVisualizeTopic(t.name)}
                           className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded hover:bg-blue-200"

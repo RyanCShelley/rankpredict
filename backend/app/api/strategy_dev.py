@@ -554,6 +554,9 @@ async def _do_sync(
             del topic_results
             print("[Background] Topic classification complete")
 
+            # Build a row lookup for fast clicks access
+            row_clicks = {r["query"]: r.get("clicks", 0) for r in rows}
+
             # Cap at 100 terms per topic - keep top 100 by clicks
             topic_groups = {}
             for keyword, data in topic_lookup.items():
@@ -561,18 +564,19 @@ async def _do_sync(
                 if t:
                     if t not in topic_groups:
                         topic_groups[t] = []
-                    # Find clicks for this keyword from rows
-                    clicks = next((r.get("clicks", 0) for r in rows if r["query"] == keyword), 0)
-                    topic_groups[t].append((keyword, clicks))
+                    topic_groups[t].append((keyword, row_clicks.get(keyword, 0)))
 
             for t, items in topic_groups.items():
-                if len(items) > 100:
-                    items.sort(key=lambda x: x[1], reverse=True)
-                    keep = set(kw for kw, _ in items[:100])
-                    removed = [kw for kw, _ in items[100:]]
-                    for kw in removed:
-                        del topic_lookup[kw]
+                items.sort(key=lambda x: x[1], reverse=True)
+                kept = items[:100]
+                removed = items[100:]
+                # Remove excess from topic_lookup
+                for kw, _ in removed:
+                    del topic_lookup[kw]
+                if removed:
                     print(f"[Background] Capped topic '{t}' to 100 terms (removed {len(removed)})")
+                else:
+                    print(f"[Background] Topic '{t}': {len(kept)} terms")
         else:
             print("[Background] No topics defined, skipping topic classification")
 
@@ -591,6 +595,10 @@ async def _do_sync(
         for i, row in enumerate(rows):
             query = row["query"]
             topic_data = topic_lookup.get(query, {})
+
+            # Only add keywords that matched a topic (when topics are defined)
+            if topics and topic_data.get("assigned_topic") is None:
+                continue
 
             # Classify buyer journey
             stage, confidence = buyer_journey_service.classify_buyer_journey(query)
