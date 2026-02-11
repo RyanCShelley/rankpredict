@@ -522,10 +522,19 @@ async def _do_sync(
         rows = list(seen_queries.values())
         print(f"[Background] Deduplicated from {deduped_count} to {len(rows)} unique queries")
 
-        # Limit total rows to prevent memory issues (max 5,000)
-        MAX_KEYWORDS = 5000
+        # Sort by clicks for priority-based processing
+        rows = sorted(rows, key=lambda x: x.get("clicks", 0), reverse=True)
+
+        topics = core_topics or []
+
+        # Limit rows before expensive classification
+        # Only need ~300 per topic since we cap at 100 (buffer for threshold filtering)
+        if topics:
+            MAX_KEYWORDS = max(len(topics) * 300, 500)
+        else:
+            MAX_KEYWORDS = 5000
         if len(rows) > MAX_KEYWORDS:
-            rows = sorted(rows, key=lambda x: x.get("clicks", 0), reverse=True)[:MAX_KEYWORDS]
+            rows = rows[:MAX_KEYWORDS]
             print(f"[Background] Limited to top {MAX_KEYWORDS} keywords by clicks")
 
         # Clear existing keywords
@@ -536,7 +545,6 @@ async def _do_sync(
 
         # Classify keywords by topic (only if topics defined)
         queries = [r["query"] for r in rows]
-        topics = core_topics or []
         topic_lookup = {}
 
         if topics:
@@ -570,7 +578,6 @@ async def _do_sync(
                 items.sort(key=lambda x: x[1], reverse=True)
                 kept = items[:100]
                 removed = items[100:]
-                # Remove excess from topic_lookup
                 for kw, _ in removed:
                     del topic_lookup[kw]
                 if removed:
@@ -582,25 +589,26 @@ async def _do_sync(
 
         del queries
 
+        # Build final list of rows to save (apply topic filter first)
+        rows_to_save = []
+        for row in rows:
+            topic_data = topic_lookup.get(row["query"], {})
+            if topics and topic_data.get("assigned_topic") is None:
+                continue
+            rows_to_save.append((row, topic_data))
+
         # Update status
         project = db.query(StrategyProject).filter(StrategyProject.id == project_id).first()
         if project:
-            project.sync_message = "Saving keywords to database..."
+            project.sync_message = f"Classifying {len(rows_to_save)} keywords by buyer journey..."
             db.commit()
 
-        # Add keywords with classifications
+        # Classify buyer journey and save ONLY kept keywords
         keywords_added = 0
         BATCH_SIZE = 200
 
-        for i, row in enumerate(rows):
+        for row, topic_data in rows_to_save:
             query = row["query"]
-            topic_data = topic_lookup.get(query, {})
-
-            # Only add keywords that matched a topic (when topics are defined)
-            if topics and topic_data.get("assigned_topic") is None:
-                continue
-
-            # Classify buyer journey
             stage, confidence = buyer_journey_service.classify_buyer_journey(query)
 
             kw = StrategyKeyword(

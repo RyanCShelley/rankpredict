@@ -130,44 +130,49 @@ def classify_keywords_batch(
     model = get_model()
     results = []
 
+    # Pre-stack topic embeddings for batched matrix multiplication
+    topic_names = list(topic_embeddings.keys())
+    # For each topic, store its embeddings and count
+    topic_embed_list = [(name, topic_embeddings[name]) for name in topic_names]
+
     # Process in batches to manage memory
     for i in range(0, len(keywords), batch_size):
         batch = keywords[i:i + batch_size]
         print(f"  Processing batch {i // batch_size + 1} ({len(batch)} keywords)...")
 
-        # Encode batch of keywords at once (much faster)
+        # Encode entire batch at once
         keyword_embeddings = model.encode(batch, normalize_embeddings=True, show_progress_bar=False)
 
+        # For each topic, compute similarity for ALL keywords in batch at once
+        # shape: (num_keywords, embedding_dim) x (embedding_dim, num_topic_keywords) -> (num_keywords, num_topic_keywords)
+        best_topics = [None] * len(batch)
+        best_scores = [0.0] * len(batch)
+
+        for topic_name, embeds in topic_embed_list:
+            # Batched cosine similarity: (batch_size, dim) @ (dim, num_topic_kws) -> (batch_size, num_topic_kws)
+            sim_matrix = cosine_similarity(keyword_embeddings, embeds)
+            # Max similarity per keyword against this topic's keywords
+            max_sims = sim_matrix.max(axis=1)
+
+            for j in range(len(batch)):
+                if max_sims[j] > best_scores[j]:
+                    best_scores[j] = float(max_sims[j])
+                    best_topics[j] = topic_name
+
         for j, kw in enumerate(batch):
-            keyword_embed = keyword_embeddings[j]
-            best_topic = None
-            best_score = 0.0
-
-            for topic_name, embeds in topic_embeddings.items():
-                sims = cosine_similarity(
-                    keyword_embed.reshape(1, -1),
-                    embeds
-                )[0]
-                max_sim = float(sims.max())
-
-                if max_sim > best_score:
-                    best_score = max_sim
-                    best_topic = topic_name
-
-            if best_score >= threshold:
+            if best_scores[j] >= threshold:
                 results.append({
                     "keyword": kw,
-                    "assigned_topic": best_topic,
-                    "topic_similarity": round(best_score, 3)
+                    "assigned_topic": best_topics[j],
+                    "topic_similarity": round(best_scores[j], 3)
                 })
             else:
                 results.append({
                     "keyword": kw,
                     "assigned_topic": None,
-                    "topic_similarity": round(best_score, 3)
+                    "topic_similarity": round(best_scores[j], 3)
                 })
 
-        # Free memory after each batch
         del keyword_embeddings
 
     return results

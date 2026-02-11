@@ -240,23 +240,21 @@ export default function StrategyDev() {
         const status = data.project.sync_status;
         const message = data.project.sync_message;
 
-        // Update selected project with latest status
+        // Update selected project with latest status message
         setSelectedProject(prev => ({
           ...prev,
           sync_status: status,
           sync_message: message
         }));
 
-        // Update project data without flashing (background refresh)
-        setProjectData(data);
-
         if (status === 'syncing') {
-          // Continue polling
-          setTimeout(checkStatus, 2000);
+          // Continue polling - don't update table data mid-sync
+          setTimeout(checkStatus, 3000);
         } else {
-          // Sync complete or error
+          // Sync complete or error - NOW refresh table data
+          setProjectData(data);
           setSyncing(false);
-          loadProjects(); // Refresh project list
+          loadProjects();
 
           if (status === 'error') {
             alert('Sync failed: ' + (message || 'Unknown error'));
@@ -728,17 +726,16 @@ export default function StrategyDev() {
                 )}
               </div>
 
-              {/* Sync Progress Bar */}
+              {/* Sync Status */}
               {syncing && (
-                <div className="mt-3 w-full max-w-xl">
-                  <div className="flex items-center gap-3">
-                    <div className="flex-1 bg-gray-200 rounded-full h-2 overflow-hidden">
-                      <div className="bg-blue-600 h-full rounded-full animate-pulse" style={{ width: '100%' }}></div>
-                    </div>
-                    <span className="text-sm text-blue-600 whitespace-nowrap">
-                      {selectedProject.sync_message || 'Starting sync...'}
-                    </span>
-                  </div>
+                <div className="mt-3 flex items-center gap-2">
+                  <svg className="animate-spin h-4 w-4 text-blue-600" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                  </svg>
+                  <span className="text-sm text-blue-600">
+                    {selectedProject.sync_message || 'Starting sync...'}
+                  </span>
                 </div>
               )}
               {!syncing && selectedProject?.sync_status === 'complete' && selectedProject.sync_message && (
