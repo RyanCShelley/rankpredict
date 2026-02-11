@@ -42,10 +42,12 @@ def create_topic_embeddings(topics: List[Dict]) -> Dict[str, np.ndarray]:
 
     for topic in topics:
         topic_name = topic["name"]
-        keywords = topic["keywords"]
-        if keywords:
-            embeddings = model.encode(keywords, normalize_embeddings=True)
-            topic_embeddings[topic_name] = embeddings
+        keywords = topic.get("keywords") or []
+        # Fall back to topic name itself if no example keywords provided
+        if not keywords:
+            keywords = [topic_name]
+        embeddings = model.encode(keywords, normalize_embeddings=True)
+        topic_embeddings[topic_name] = embeddings
 
     return topic_embeddings
 
