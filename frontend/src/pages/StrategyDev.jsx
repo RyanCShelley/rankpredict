@@ -42,6 +42,7 @@ export default function StrategyDev() {
   // GSC state
   const [gscSites, setGscSites] = useState([]);
   const [showSiteSelect, setShowSiteSelect] = useState(false);
+  const [siteSearch, setSiteSearch] = useState('');
   const [maxPosition, setMaxPosition] = useState(''); // Position filter for sync
 
   // Filters
@@ -1180,22 +1181,37 @@ export default function StrategyDev() {
             {gscSites.length === 0 ? (
               <p className="text-gray-500">No sites found. Make sure your Google account has access to Search Console properties.</p>
             ) : (
-              <div className="space-y-2 max-h-64 overflow-y-auto">
-                {gscSites.map((site, i) => (
-                  <button
-                    key={i}
-                    onClick={() => handleSelectSite(site.site_url)}
-                    className="w-full text-left p-3 border rounded hover:bg-gray-50"
-                  >
-                    <div className="font-medium text-sm">{site.site_url}</div>
-                    <div className="text-xs text-gray-500">{site.permission_level}</div>
-                  </button>
-                ))}
-              </div>
+              <>
+                <input
+                  type="text"
+                  value={siteSearch}
+                  onChange={(e) => setSiteSearch(e.target.value)}
+                  className="w-full border rounded px-3 py-2 mb-3 text-sm"
+                  placeholder="Search sites..."
+                  autoFocus
+                />
+                <div className="space-y-2 max-h-64 overflow-y-auto">
+                  {gscSites
+                    .filter(site => site.site_url.toLowerCase().includes(siteSearch.toLowerCase()))
+                    .map((site, i) => (
+                      <button
+                        key={i}
+                        onClick={() => { handleSelectSite(site.site_url); setSiteSearch(''); }}
+                        className="w-full text-left p-3 border rounded hover:bg-gray-50"
+                      >
+                        <div className="font-medium text-sm">{site.site_url}</div>
+                        <div className="text-xs text-gray-500">{site.permission_level}</div>
+                      </button>
+                    ))}
+                  {gscSites.filter(site => site.site_url.toLowerCase().includes(siteSearch.toLowerCase())).length === 0 && (
+                    <p className="text-sm text-gray-500 text-center py-2">No matching sites</p>
+                  )}
+                </div>
+              </>
             )}
             <div className="mt-4 flex justify-end">
               <button
-                onClick={() => setShowSiteSelect(false)}
+                onClick={() => { setShowSiteSelect(false); setSiteSearch(''); }}
                 className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded"
               >
                 Cancel

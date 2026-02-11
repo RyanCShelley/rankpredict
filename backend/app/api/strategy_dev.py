@@ -592,10 +592,6 @@ async def _do_sync(
             query = row["query"]
             topic_data = topic_lookup.get(query, {})
 
-            # Only add if passes topic threshold (if topics defined)
-            if topics and topic_data.get("assigned_topic") is None:
-                continue
-
             # Classify buyer journey
             stage, confidence = buyer_journey_service.classify_buyer_journey(query)
 
@@ -621,11 +617,17 @@ async def _do_sync(
         db.commit()
         print(f"[Background] Added {keywords_added} keywords to database")
 
+        # Count classified vs unclassified
+        classified = sum(1 for r in rows if topic_lookup.get(r["query"], {}).get("assigned_topic")) if topics else 0
+
         # Update status to complete
         project = db.query(StrategyProject).filter(StrategyProject.id == project_id).first()
         if project:
             project.sync_status = "complete"
-            project.sync_message = f"Sync complete. Added {keywords_added} keywords."
+            msg = f"Sync complete. Added {keywords_added} keywords."
+            if topics and classified > 0:
+                msg += f" ({classified} classified by topic, {keywords_added - classified} unclassified)"
+            project.sync_message = msg
             db.commit()
 
         print(f"[Background] Sync complete for project {project_id}")
