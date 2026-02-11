@@ -56,12 +56,22 @@ class ClientProfileResponse(BaseModel):
     vertical_keywords: Optional[List[str]] = None
 
 
+class ProjectInfoResponse(BaseModel):
+    """Minimal project info attached to a keyword list"""
+    id: int
+    name: str
+    domain: Optional[str] = None
+    persona: Optional[Dict[str, Any]] = None
+    core_topics: Optional[List[Dict[str, Any]]] = None
+
+
 class KeywordListDetailResponse(BaseModel):
     """Detailed keyword list response with keywords"""
     id: int
     name: str
     target_domain_url: str
     client_profile: Optional[ClientProfileResponse] = None
+    project: Optional[ProjectInfoResponse] = None
     keywords: List[KeywordResponse]
     created_at: datetime
     updated_at: datetime

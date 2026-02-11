@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, Depends, Query
 from sqlalchemy.orm import Session
 from typing import Optional
 from app.database import get_db
-from app.models.database import Keyword, KeywordAnalysis, Outline, KeywordList
+from app.models.database import Keyword, KeywordAnalysis, Outline, KeywordList, StrategyProject
 from app.schemas.requests import GenerateOutlineRequest
 from app.schemas.responses import OutlineResponse, ImprovementPlanResponse
 from app.services.serp_service import get_serp_service, strip_html_for_storage
@@ -228,6 +228,14 @@ def generate_outline(
             keyword=keyword
         )
 
+    # Look up project persona via keyword_list -> project
+    persona = None
+    keyword_list = db.query(KeywordList).filter(KeywordList.id == keyword_obj.keyword_list_id).first()
+    if keyword_list and keyword_list.project_id:
+        project = db.query(StrategyProject).filter(StrategyProject.id == keyword_list.project_id).first()
+        if project and project.persona:
+            persona = project.persona
+
     # Generate dynamic content brief with SERP features
     try:
         outline_data = outline_service.generate_outline(
@@ -237,7 +245,8 @@ def generate_outline(
             intent_analysis=intent_analysis,
             content_type=request.content_type,
             serp_features=serp_features,
-            existing_content=existing_content_data
+            existing_content=existing_content_data,
+            persona=persona
         )
     except Exception as e:
         error_detail = str(e)

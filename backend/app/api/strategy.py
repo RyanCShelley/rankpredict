@@ -6,11 +6,11 @@ from sqlalchemy.orm import Session
 from typing import List
 from datetime import datetime
 from app.database import get_db
-from app.models.database import KeywordList, Keyword, KeywordAnalysis
+from app.models.database import KeywordList, Keyword, KeywordAnalysis, StrategyProject
 from app.schemas.requests import CreateKeywordListRequest, AddKeywordsRequest, ScoreKeywordsRequest, UpdateKeywordRequest, ScoreSpecificKeywordsRequest, UpdateKeywordListRequest
 from app.schemas.responses import (
     KeywordListResponse, KeywordListDetailResponse, KeywordResponse, ScoreKeywordsResponse,
-    FitScore, ClientForecast, ClientProfileResponse
+    FitScore, ClientForecast, ClientProfileResponse, ProjectInfoResponse
 )
 from app.services.serp_service import get_serp_service, strip_html_for_storage
 from app.services.semantic_service import get_semantic_service
@@ -19,6 +19,22 @@ from app.services.forecast_service import get_forecast_service
 import json
 
 router = APIRouter()
+
+
+def _build_project_info(keyword_list, db) -> Optional[ProjectInfoResponse]:
+    """Build ProjectInfoResponse if list is linked to a project."""
+    if not keyword_list.project_id:
+        return None
+    project = db.query(StrategyProject).filter(StrategyProject.id == keyword_list.project_id).first()
+    if not project:
+        return None
+    return ProjectInfoResponse(
+        id=project.id,
+        name=project.name,
+        domain=project.domain,
+        persona=project.persona,
+        core_topics=project.core_topics
+    )
 
 
 @router.post("/lists", response_model=KeywordListDetailResponse)
@@ -91,6 +107,7 @@ def create_keyword_list(
             name=keyword_list.name,
             target_domain_url=keyword_list.target_domain_url,
             client_profile=client_profile_response,
+            project=_build_project_info(keyword_list, db),
             keywords=keyword_responses,
             created_at=keyword_list.created_at,
             updated_at=keyword_list.updated_at
@@ -181,6 +198,7 @@ def get_keyword_list(list_id: int, db: Session = Depends(get_db)):
         name=keyword_list.name,
         target_domain_url=keyword_list.target_domain_url,
         client_profile=client_profile_response,
+        project=_build_project_info(keyword_list, db),
         keywords=keyword_responses,
         created_at=keyword_list.created_at,
         updated_at=keyword_list.updated_at
@@ -518,6 +536,7 @@ def add_keywords_to_list(
             name=keyword_list.name,
             target_domain_url=keyword_list.target_domain_url,
             client_profile=client_profile_response,
+            project=_build_project_info(keyword_list, db),
             keywords=keyword_responses,
             created_at=keyword_list.created_at,
             updated_at=keyword_list.updated_at

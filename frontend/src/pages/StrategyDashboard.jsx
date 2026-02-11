@@ -627,9 +627,21 @@ const StrategyDashboard = () => {
                   <div>
                     <h2 className="text-lg font-semibold">{selectedList.name}</h2>
                     <p className="text-xs text-gray-600">{selectedList.target_domain_url}</p>
+                    {selectedList.project && (
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        Project: <span className="font-medium text-gray-700">{selectedList.project.name}</span>
+                        {selectedList.project.persona?.description && (
+                          <span className="ml-2 text-green-600" title={selectedList.project.persona.expanded}>
+                            Persona: {selectedList.project.persona.description}
+                          </span>
+                        )}
+                      </p>
+                    )}
                     {selectedList.client_profile ? (
                       <p className="text-xs text-blue-600">
-                        {VERTICALS.find(v => v.value === selectedList.client_profile.vertical)?.label || selectedList.client_profile.vertical}
+                        {selectedList.client_profile.vertical === 'custom' && selectedList.project
+                          ? 'Client profile from project'
+                          : VERTICALS.find(v => v.value === selectedList.client_profile.vertical)?.label || selectedList.client_profile.vertical}
                         <button onClick={openEditSettings} className="ml-1 text-gray-500 hover:text-gray-700 underline">Edit</button>
                       </p>
                     ) : (

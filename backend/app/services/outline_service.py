@@ -37,7 +37,8 @@ class OutlineService:
         intent_analysis: Dict,
         content_type: str = "new",
         serp_features: Optional[Dict] = None,
-        existing_content: Optional[Dict] = None
+        existing_content: Optional[Dict] = None,
+        persona: Optional[Dict] = None
     ) -> Dict:
         """
         Generate dynamic content brief using LLM based on SERP analysis
@@ -63,9 +64,9 @@ class OutlineService:
         )
 
         if content_type == "existing":
-            return self._generate_optimization_plan(keyword, serp_context, serp_medians, existing_content, serp_features)
+            return self._generate_optimization_plan(keyword, serp_context, serp_medians, existing_content, serp_features, persona)
         else:
-            return self._generate_content_brief(keyword, serp_context, serp_medians, intent_analysis, serp_features)
+            return self._generate_content_brief(keyword, serp_context, serp_medians, intent_analysis, serp_features, persona)
 
     def _prepare_comprehensive_serp_context(
         self,
@@ -187,7 +188,8 @@ class OutlineService:
         serp_context: str,
         serp_medians: Dict[str, float],
         intent_analysis: Dict,
-        serp_features: Optional[Dict]
+        serp_features: Optional[Dict],
+        persona: Optional[Dict] = None
     ) -> Dict:
         """Generate comprehensive content brief using Claude or OpenAI"""
 
@@ -199,6 +201,15 @@ class OutlineService:
         related_searches = []
         if serp_features and serp_features.get("related_searches"):
             related_searches = serp_features["related_searches"][:10]
+
+        persona_block = ""
+        if persona and persona.get("expanded"):
+            persona_block = f"""
+## Target Persona
+{persona['expanded']}
+
+IMPORTANT: Tailor ALL content recommendations to this persona. Use their language, address their specific pain points, and match their search behavior patterns. The tone, vocabulary, and examples should resonate with this audience.
+"""
 
         prompt = f"""You are a senior SEO content strategist. Analyze the following SERP data and create a comprehensive content brief that will help the content rank in the top 10.
 
@@ -221,7 +232,7 @@ ONLY recommend actions within these service areas:
 - Data Analysis (analytics, reporting, competitor analysis)
 
 {serp_context}
-
+{persona_block}
 ## Intent Analysis
 - **TARGET Intent Type:** {intent_analysis.get('intent_type', 'informational')} {"(USER SPECIFIED - build content for THIS intent)" if intent_analysis.get('user_override') else "(detected from SERP)"}
 - **Content Format:** {intent_analysis.get('content_format', 'article')}
@@ -506,7 +517,8 @@ Return ONLY valid JSON, no markdown code blocks or other formatting."""
         serp_context: str,
         serp_medians: Dict[str, float],
         existing_content: Optional[Dict] = None,
-        serp_features: Optional[Dict] = None
+        serp_features: Optional[Dict] = None,
+        persona: Optional[Dict] = None
     ) -> Dict:
         """Generate comprehensive optimization plan for existing content"""
 
@@ -553,8 +565,17 @@ Return ONLY valid JSON, no markdown code blocks or other formatting."""
         existing_elements = self._detect_existing_page_elements(existing_content)
         existing_elements_context = "\n".join([f"- {elem}" for elem in existing_elements]) if existing_elements else "None detected"
 
-        prompt = f"""You are a senior SEO content strategist. Analyze this EXISTING content and create a detailed optimization plan to improve rankings.
+        persona_block = ""
+        if persona and persona.get("expanded"):
+            persona_block = f"""
+## Target Persona
+{persona['expanded']}
 
+Tailor all optimization recommendations to resonate with this persona's language, pain points, and search behavior.
+"""
+
+        prompt = f"""You are a senior SEO content strategist. Analyze this EXISTING content and create a detailed optimization plan to improve rankings.
+{persona_block}
 ## CRITICAL: DO NOT RECOMMEND ELEMENTS THAT ALREADY EXIST
 The following elements have been DETECTED on the page. DO NOT recommend adding these - mark them as MAINTAIN instead:
 {existing_elements_context}

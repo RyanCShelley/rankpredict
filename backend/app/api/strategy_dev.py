@@ -847,6 +847,13 @@ async def add_keywords_to_list(
     if len(projects) != len(project_ids):
         raise HTTPException(status_code=403, detail="Access denied")
 
+    # Resolve the source project for auto-populating list settings
+    source_project = None
+    if project_ids:
+        source_project = db.query(StrategyProject).filter(
+            StrategyProject.id == list(project_ids)[0]
+        ).first()
+
     # Get or create list
     if request.list_id:
         keyword_list = db.query(KeywordList).filter(
@@ -854,12 +861,34 @@ async def add_keywords_to_list(
         ).first()
         if not keyword_list:
             raise HTTPException(status_code=404, detail="List not found")
+        # Link to project if not already linked
+        if not keyword_list.project_id and source_project:
+            keyword_list.project_id = source_project.id
     elif request.new_list_name:
-        if not request.target_domain_url:
+        # Use project domain as fallback target_domain_url
+        target_url = request.target_domain_url
+        if not target_url and source_project and source_project.domain:
+            target_url = source_project.domain if source_project.domain.startswith("http") else f"https://{source_project.domain}"
+        if not target_url:
             raise HTTPException(status_code=400, detail="Target domain required for new list")
+
+        # Auto-populate client profile from project core_topics
+        vertical_keywords = None
+        if source_project and source_project.core_topics:
+            vertical_keywords = []
+            for topic in source_project.core_topics:
+                if topic.get("name"):
+                    vertical_keywords.append(topic["name"])
+                for kw in topic.get("keywords", []):
+                    if kw:
+                        vertical_keywords.append(kw)
+
         keyword_list = KeywordList(
             name=request.new_list_name,
-            target_domain_url=request.target_domain_url
+            target_domain_url=target_url,
+            project_id=source_project.id if source_project else None,
+            client_vertical="custom" if vertical_keywords else None,
+            client_vertical_keywords=vertical_keywords
         )
         db.add(keyword_list)
         db.commit()
