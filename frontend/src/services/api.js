@@ -92,41 +92,86 @@ export const strategyAPI = {
   },
 
   scoreSelectedKeywords: async (listId, keywordIds, onProgress) => {
-    const token = Cookies.get('auth_token');
-    const response = await fetch(`${API_BASE_URL}/api/strategy/lists/${listId}/score-selected`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-      body: JSON.stringify({ keyword_ids: keywordIds }),
-    });
+    const MAX_RETRIES = 3;
+    let remainingIds = [...keywordIds];
+    let lastError = null;
 
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({ detail: response.statusText }));
-      throw new Error(err.detail || 'Scoring failed');
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      if (remainingIds.length === 0) break;
+
+      if (attempt > 0) {
+        // Exponential backoff: 2s, 4s
+        await new Promise(r => setTimeout(r, 1000 * Math.pow(2, attempt)));
+        console.log(`🔄 Retry attempt ${attempt + 1}/${MAX_RETRIES} for ${remainingIds.length} keywords`);
+      }
+
+      try {
+        const token = Cookies.get('auth_token');
+        const response = await fetch(`${API_BASE_URL}/api/strategy/lists/${listId}/score-selected`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ keyword_ids: remainingIds }),
+        });
+
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({ detail: response.statusText }));
+          throw new Error(err.detail || 'Scoring failed');
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let completed = false;
+        const scoredIds = new Set();
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+
+          const lines = buffer.split('\n');
+          buffer = lines.pop(); // keep incomplete line in buffer
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              try {
+                const event = JSON.parse(line.slice(6));
+                if (event.type === 'scored' && event.keyword_id) {
+                  // Track keywords confirmed scored (after DB commit)
+                  scoredIds.add(event.keyword_id);
+                }
+                if (event.type === 'done') {
+                  completed = true;
+                }
+                if (onProgress) onProgress(event);
+              } catch { /* ignore parse errors */ }
+            }
+          }
+        }
+
+        if (completed) {
+          remainingIds = [];
+          break; // All done
+        }
+
+        // Stream ended without 'done' event — connection dropped mid-scoring
+        // Remove already-scored keywords from the retry list
+        remainingIds = remainingIds.filter(id => !scoredIds.has(id));
+        if (remainingIds.length === 0) break;
+        lastError = new Error('Connection lost during scoring');
+
+      } catch (err) {
+        lastError = err;
+        // On network error, remainingIds stays as-is for retry
+        console.error(`Scoring attempt ${attempt + 1} failed:`, err.message);
+      }
     }
 
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-
-      const lines = buffer.split('\n');
-      buffer = lines.pop(); // keep incomplete line in buffer
-
-      for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          try {
-            const event = JSON.parse(line.slice(6));
-            if (onProgress) onProgress(event);
-          } catch { /* ignore parse errors */ }
-        }
-      }
+    if (remainingIds.length > 0 && lastError) {
+      throw lastError;
     }
   },
 

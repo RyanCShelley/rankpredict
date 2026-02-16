@@ -6,7 +6,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime
-from app.database import get_db
+from app.database import get_db, SessionLocal
 from app.models.database import KeywordList, Keyword, KeywordAnalysis, StrategyProject
 from app.schemas.requests import CreateKeywordListRequest, AddKeywordsRequest, ScoreKeywordsRequest, UpdateKeywordRequest, ScoreSpecificKeywordsRequest, UpdateKeywordListRequest
 from app.schemas.responses import (
@@ -18,6 +18,8 @@ from app.services.semantic_service import get_semantic_service
 from app.models.ml_model import get_model
 from app.services.forecast_service import get_forecast_service
 import json
+import queue
+import threading
 
 router = APIRouter()
 
@@ -605,99 +607,142 @@ def score_selected_keywords(
 
     total = len(keywords_to_score)
 
-    def generate():
-        serp_service = get_serp_service()
-        semantic_service = get_semantic_service()
-        forecast_service = get_forecast_service()
+    # Collect IDs to re-query in the worker thread's own DB session
+    keyword_ids_to_score = [kw.id for kw in keywords_to_score]
+    list_id_for_worker = keyword_list.id
 
-        keywords_scored = 0
+    # Use a queue + background thread so we can send heartbeats while scoring
+    event_queue = queue.Queue()
+    HEARTBEAT_INTERVAL = 15  # seconds between keepalive pings
 
-        for idx, keyword_obj in enumerate(keywords_to_score):
-            # Send progress event
-            yield f"data: {json.dumps({'type': 'progress', 'current': idx + 1, 'total': total, 'keyword': keyword_obj.keyword})}\n\n"
+    def scoring_worker():
+        """Run scoring in a background thread with its own DB session."""
+        thread_db = SessionLocal()
+        try:
+            serp_service = get_serp_service()
+            semantic_service = get_semantic_service()
+            forecast_service = get_forecast_service()
 
-            try:
-                keyword = keyword_obj.keyword
+            thread_keyword_list = thread_db.query(KeywordList).filter(KeywordList.id == list_id_for_worker).first()
+            thread_keywords = thread_db.query(Keyword).filter(Keyword.id.in_(keyword_ids_to_score)).all()
+            # Preserve original ordering
+            id_order = {kid: i for i, kid in enumerate(keyword_ids_to_score)}
+            thread_keywords.sort(key=lambda kw: id_order.get(kw.id, 0))
 
-                # Check if we have cached analysis
-                cached_analysis = db.query(KeywordAnalysis).filter(
-                    KeywordAnalysis.keyword == keyword
-                ).order_by(KeywordAnalysis.analyzed_at.desc()).first()
+            keywords_scored = 0
 
-                if cached_analysis:
-                    serp_medians = cached_analysis.serp_medians or {}
-                    enriched_results = cached_analysis.serp_data.get("enriched_results", [])
-                    if serp_medians.get("flesch_reading_ease_score", 0) < 10:
-                        serp_medians["flesch_reading_ease_score"] = 55.0
-                    if serp_medians.get("word_count", 0) < 100:
-                        serp_medians["word_count"] = 1500.0
-                else:
-                    serp_data = serp_service.fetch_serp_data(keyword, num_results=10)
-                    organic_results = serp_service.extract_organic_results(serp_data)
-                    enriched_results = serp_service.enrich_serp_results(organic_results, limit=10)
+            for idx, keyword_obj in enumerate(thread_keywords):
+                # Send progress event
+                event_queue.put(f"data: {json.dumps({'type': 'progress', 'current': idx + 1, 'total': total, 'keyword': keyword_obj.keyword})}\n\n")
 
-                    semantic_scores = semantic_service.compute_semantic_scores_for_serp(
-                        enriched_results,
-                        query=keyword,
-                        html_column="raw_html"
-                    )
+                try:
+                    keyword = keyword_obj.keyword
 
-                    for i, score in enumerate(semantic_scores):
-                        if i < len(enriched_results):
-                            enriched_results[i]["semantic_topic_score"] = score
+                    # Check if we have cached analysis
+                    cached_analysis = thread_db.query(KeywordAnalysis).filter(
+                        KeywordAnalysis.keyword == keyword
+                    ).order_by(KeywordAnalysis.analyzed_at.desc()).first()
 
-                    serp_medians = serp_service.calculate_serp_medians(enriched_results)
-                    serp_medians["semantic_topic_score"] = sum(semantic_scores[:10]) / len(semantic_scores[:10]) if semantic_scores else 0.7
+                    if cached_analysis:
+                        serp_medians = cached_analysis.serp_medians or {}
+                        enriched_results = cached_analysis.serp_data.get("enriched_results", [])
+                        if serp_medians.get("flesch_reading_ease_score", 0) < 10:
+                            serp_medians["flesch_reading_ease_score"] = 55.0
+                        if serp_medians.get("word_count", 0) < 100:
+                            serp_medians["word_count"] = 1500.0
+                    else:
+                        serp_data = serp_service.fetch_serp_data(keyword, num_results=10)
+                        organic_results = serp_service.extract_organic_results(serp_data)
+                        enriched_results = serp_service.enrich_serp_results(organic_results, limit=10)
 
-                    analysis = KeywordAnalysis(
-                        keyword_id=keyword_obj.id,
+                        semantic_scores = semantic_service.compute_semantic_scores_for_serp(
+                            enriched_results,
+                            query=keyword,
+                            html_column="raw_html"
+                        )
+
+                        for i, score in enumerate(semantic_scores):
+                            if i < len(enriched_results):
+                                enriched_results[i]["semantic_topic_score"] = score
+
+                        serp_medians = serp_service.calculate_serp_medians(enriched_results)
+                        serp_medians["semantic_topic_score"] = sum(semantic_scores[:10]) / len(semantic_scores[:10]) if semantic_scores else 0.7
+
+                        analysis = KeywordAnalysis(
+                            keyword_id=keyword_obj.id,
+                            keyword=keyword,
+                            serp_data={"enriched_results": strip_html_for_storage(enriched_results)},
+                            serp_medians=serp_medians,
+                            semantic_scores=semantic_scores
+                        )
+                        thread_db.add(analysis)
+
+                    target_domain_url = thread_keyword_list.target_domain_url
+
+                    forecast = forecast_service.forecast_keyword_rank_likelihood(
                         keyword=keyword,
-                        serp_data={"enriched_results": strip_html_for_storage(enriched_results)},
+                        enriched_results=enriched_results,
                         serp_medians=serp_medians,
-                        semantic_scores=semantic_scores
-                    )
-                    db.add(analysis)
-
-                target_domain_url = keyword_list.target_domain_url
-
-                forecast = forecast_service.forecast_keyword_rank_likelihood(
-                    keyword=keyword,
-                    enriched_results=enriched_results,
-                    serp_medians=serp_medians,
-                    target_domain_url=target_domain_url
-                )
-
-                rankability_score = forecast["forecast_pct"]["baseline_median_pct"] / 100.0
-                opportunity_tier = forecast.get("forecast_tiers", {}).get("baseline_median_tier", "T4_NOT_WORTH_IT")
-
-                keyword_obj.rankability_score = rankability_score
-                keyword_obj.opportunity_tier = opportunity_tier
-
-                keywords_scored += 1
-
-                if keyword_list.client_vertical:
-                    enhanced_forecast = forecast_service.analyze_keyword_with_client_profile(
-                        keyword=keyword,
-                        forecast_result=forecast,
-                        client_vertical=keyword_list.client_vertical,
-                        client_vertical_keywords=keyword_list.client_vertical_keywords
+                        target_domain_url=target_domain_url
                     )
 
-                    keyword_obj.domain_fit = enhanced_forecast.get("domain_fit", {}).get("score")
-                    keyword_obj.intent_fit = enhanced_forecast.get("intent_fit", {}).get("score")
-                    keyword_obj.client_forecast = enhanced_forecast.get("client_forecast", {}).get("score")
-                    keyword_obj.forecast_tier = enhanced_forecast.get("client_forecast", {}).get("tier")
+                    rankability_score = forecast["forecast_pct"]["baseline_median_pct"] / 100.0
+                    opportunity_tier = forecast.get("forecast_tiers", {}).get("baseline_median_tier", "T4_NOT_WORTH_IT")
 
-                keyword_obj.scored_at = datetime.utcnow()
-                db.commit()
+                    keyword_obj.rankability_score = rankability_score
+                    keyword_obj.opportunity_tier = opportunity_tier
 
-            except Exception as e:
-                print(f"Error scoring keyword '{keyword_obj.keyword}': {e}")
-                yield f"data: {json.dumps({'type': 'error', 'keyword': keyword_obj.keyword, 'error': str(e)})}\n\n"
-                continue
+                    keywords_scored += 1
 
-        # Send completion event
-        yield f"data: {json.dumps({'type': 'done', 'keywords_scored': keywords_scored, 'total': total})}\n\n"
+                    if thread_keyword_list.client_vertical:
+                        enhanced_forecast = forecast_service.analyze_keyword_with_client_profile(
+                            keyword=keyword,
+                            forecast_result=forecast,
+                            client_vertical=thread_keyword_list.client_vertical,
+                            client_vertical_keywords=thread_keyword_list.client_vertical_keywords
+                        )
+
+                        keyword_obj.domain_fit = enhanced_forecast.get("domain_fit", {}).get("score")
+                        keyword_obj.intent_fit = enhanced_forecast.get("intent_fit", {}).get("score")
+                        keyword_obj.client_forecast = enhanced_forecast.get("client_forecast", {}).get("score")
+                        keyword_obj.forecast_tier = enhanced_forecast.get("client_forecast", {}).get("tier")
+
+                    keyword_obj.scored_at = datetime.utcnow()
+                    thread_db.commit()
+
+                    # Confirm keyword was scored (used by frontend for retry tracking)
+                    event_queue.put(f"data: {json.dumps({'type': 'scored', 'keyword_id': keyword_obj.id, 'keyword': keyword_obj.keyword})}\n\n")
+
+                except Exception as e:
+                    print(f"Error scoring keyword '{keyword_obj.keyword}': {e}")
+                    thread_db.rollback()
+                    event_queue.put(f"data: {json.dumps({'type': 'error', 'keyword': keyword_obj.keyword, 'error': str(e)})}\n\n")
+                    continue
+
+            # Send completion event
+            event_queue.put(f"data: {json.dumps({'type': 'done', 'keywords_scored': keywords_scored, 'total': total})}\n\n")
+            event_queue.put(None)  # Sentinel to signal generator to stop
+        except Exception as e:
+            print(f"Scoring worker crashed: {e}")
+            event_queue.put(f"data: {json.dumps({'type': 'error', 'keyword': 'unknown', 'error': str(e)})}\n\n")
+            event_queue.put(None)
+        finally:
+            thread_db.close()
+
+    def generate():
+        """Yield SSE events from the queue, sending heartbeats to keep the connection alive."""
+        worker = threading.Thread(target=scoring_worker, daemon=True)
+        worker.start()
+
+        while True:
+            try:
+                event = event_queue.get(timeout=HEARTBEAT_INTERVAL)
+                if event is None:
+                    break  # Scoring complete
+                yield event
+            except queue.Empty:
+                # No event within interval — send heartbeat to keep connection alive
+                yield f": heartbeat\n\n"
 
     return StreamingResponse(
         generate(),
