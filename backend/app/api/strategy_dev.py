@@ -16,6 +16,7 @@ import asyncio
 from app.database import get_db, SessionLocal
 from app.models.database import StrategyProject, StrategyKeyword, User, KeywordList, Keyword, Outline
 from app.api.auth import get_current_user_from_token
+from app.api.strategy import _normalize_domain
 from app.services import gsc_service, topic_service, buyer_journey_service
 from app.services.keywords_everywhere_service import fetch_keyword_volumes
 from app.config import TOPIC_SIMILARITY_THRESHOLD
@@ -174,6 +175,27 @@ async def create_project(
         db.add(project)
         db.commit()
         db.refresh(project)
+
+        # Auto-link any orphan keyword lists with matching domain
+        if project.domain:
+            normalized = _normalize_domain(project.domain)
+            orphan_lists = db.query(KeywordList).filter(KeywordList.project_id.is_(None)).all()
+            for kl in orphan_lists:
+                if kl.target_domain_url and _normalize_domain(kl.target_domain_url) == normalized:
+                    kl.project_id = project.id
+                    # Populate client profile from core_topics if list has none
+                    if not kl.client_vertical_keywords and topics_data:
+                        vertical_keywords = []
+                        for topic in topics_data:
+                            if topic.get("name"):
+                                vertical_keywords.append(topic["name"])
+                            for kw in topic.get("keywords", []):
+                                if kw:
+                                    vertical_keywords.append(kw)
+                        if vertical_keywords:
+                            kl.client_vertical = "custom"
+                            kl.client_vertical_keywords = vertical_keywords
+            db.commit()
 
         return {
             "id": project.id,

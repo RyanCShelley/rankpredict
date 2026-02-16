@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime
 from app.database import get_db, SessionLocal
-from app.models.database import KeywordList, Keyword, KeywordAnalysis, StrategyProject
+from app.models.database import KeywordList, Keyword, KeywordAnalysis, StrategyProject, User
 from app.schemas.requests import CreateKeywordListRequest, AddKeywordsRequest, ScoreKeywordsRequest, UpdateKeywordRequest, ScoreSpecificKeywordsRequest, UpdateKeywordListRequest
 from app.schemas.responses import (
     KeywordListResponse, KeywordListDetailResponse, KeywordResponse, ScoreKeywordsResponse,
@@ -17,11 +17,54 @@ from app.services.serp_service import get_serp_service, strip_html_for_storage
 from app.services.semantic_service import get_semantic_service
 from app.models.ml_model import get_model
 from app.services.forecast_service import get_forecast_service
+from app.api.auth import get_current_user_from_token
 import json
 import queue
 import threading
+from urllib.parse import urlparse
 
 router = APIRouter()
+
+
+def _normalize_domain(url: str) -> str:
+    """Normalize a URL/domain to a bare domain for matching (strip protocol, www, path, trailing slash)."""
+    url = url.strip().lower()
+    if not url.startswith(("http://", "https://")):
+        url = "https://" + url
+    parsed = urlparse(url)
+    domain = parsed.hostname or ""
+    if domain.startswith("www."):
+        domain = domain[4:]
+    return domain
+
+
+def _find_or_create_project(db: Session, user: User, domain_url: str, list_name: str, client_profile=None):
+    """Find an existing project by domain or create a new one. Returns (project, was_created)."""
+    normalized = _normalize_domain(domain_url)
+
+    # Look for existing project with matching domain
+    existing_projects = db.query(StrategyProject).filter(
+        StrategyProject.user_id == user.id
+    ).all()
+
+    for project in existing_projects:
+        if project.domain and _normalize_domain(project.domain) == normalized:
+            return project, False
+
+    # Create new project
+    core_topics = None
+    if client_profile and client_profile.vertical_keywords:
+        core_topics = [{"name": client_profile.vertical, "keywords": client_profile.vertical_keywords}]
+
+    project = StrategyProject(
+        name=list_name,
+        domain=domain_url,
+        user_id=user.id,
+        core_topics=core_topics
+    )
+    db.add(project)
+    db.flush()
+    return project, True
 
 
 def _build_project_info(keyword_list, db) -> Optional[ProjectInfoResponse]:
@@ -43,14 +86,21 @@ def _build_project_info(keyword_list, db) -> Optional[ProjectInfoResponse]:
 @router.post("/lists", response_model=KeywordListDetailResponse)
 def create_keyword_list(
     request: CreateKeywordListRequest,
+    current_user: User = Depends(get_current_user_from_token),
     db: Session = Depends(get_db)
 ):
     """Create a new keyword list"""
     try:
-        # Create keyword list with optional client profile
+        # Find or create a project for this domain
+        project, _ = _find_or_create_project(
+            db, current_user, request.target_domain_url, request.name, request.client_profile
+        )
+
+        # Create keyword list with optional client profile, linked to project
         keyword_list = KeywordList(
             name=request.name,
             target_domain_url=request.target_domain_url,
+            project_id=project.id,
             client_vertical=request.client_profile.vertical if request.client_profile else None,
             client_vertical_keywords=request.client_profile.vertical_keywords if request.client_profile else None
         )
@@ -118,6 +168,34 @@ def create_keyword_list(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Error creating keyword list: {str(e)}")
+
+
+@router.post("/lists/link-projects")
+def link_orphan_lists_to_projects(
+    current_user: User = Depends(get_current_user_from_token),
+    db: Session = Depends(get_db)
+):
+    """Retroactively link all unlinked keyword lists to projects (by matching domain)."""
+    orphan_lists = db.query(KeywordList).filter(KeywordList.project_id.is_(None)).all()
+
+    linked = 0
+    created = 0
+    for kl in orphan_lists:
+        if not kl.target_domain_url:
+            continue
+        project, was_created = _find_or_create_project(db, current_user, kl.target_domain_url, kl.name)
+        kl.project_id = project.id
+
+        # Populate core_topics from list's client profile if project has none
+        if not project.core_topics and kl.client_vertical and kl.client_vertical_keywords:
+            project.core_topics = [{"name": kl.client_vertical, "keywords": kl.client_vertical_keywords}]
+
+        if was_created:
+            created += 1
+        linked += 1
+
+    db.commit()
+    return {"linked": linked, "projects_created": created, "orphan_lists_found": len(orphan_lists)}
 
 
 @router.get("/lists", response_model=List[KeywordListResponse])
