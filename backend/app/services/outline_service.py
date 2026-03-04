@@ -213,24 +213,6 @@ IMPORTANT: Tailor ALL content recommendations to this persona. Use their languag
 
         prompt = f"""You are a senior SEO content strategist. Analyze the following SERP data and create a comprehensive content brief that will help the content rank in the top 10.
 
-## IMPORTANT: SERVICE SCOPE CONSTRAINTS
-All recommendations MUST be limited to services we actually provide. DO NOT recommend:
-- Video creation or video marketing
-- Link building or backlink acquisition
-- Social media marketing
-- Paid advertising (PPC, display ads)
-- Influencer outreach
-- Guest posting
-
-ONLY recommend actions within these service areas:
-- On-Page SEO (title tags, meta descriptions, header structure, keyword optimization)
-- Technical SEO (site speed, schema markup, crawlability, mobile optimization)
-- Content Strategy (new content, content updates, content gaps, topic clusters)
-- Semantic Search Optimization (entity coverage, topical authority, NLP optimization)
-- Local SEO / Local Listings (Google Business Profile, local citations)
-- Digital PR (press releases, news coverage, brand mentions)
-- Data Analysis (analytics, reporting, competitor analysis)
-
 {serp_context}
 {persona_block}
 ## Intent Analysis
@@ -238,29 +220,55 @@ ONLY recommend actions within these service areas:
 - **Content Format:** {intent_analysis.get('content_format', 'article')}
 - **Reasoning:** {intent_analysis.get('reasoning', '')}
 
-CRITICAL INSTRUCTION - PAGE FORMAT BY INTENT:
-The TARGET intent type OVERRIDES what the SERP shows. Even if the SERP is full of listicles/comparisons, you MUST create content matching the TARGET intent:
+## CRITICAL INSTRUCTION - PAGE FORMAT BY INTENT
 
-**TRANSACTIONAL** (Service/Product Page):
-- DO NOT create a listicle or "best of" list
+You MUST study the top-ranking SERP results above carefully. The outline you create should mirror the content format, structure, and topical coverage of the pages that are actually ranking. The SERP results show you exactly what Google considers the best answer for this query — your outline must match that pattern.
+
+**INFORMATIONAL** (Educational Content — e.g., "what is X", "how to X", "guide to X"):
+- NEVER use service/product page sections like "What We Do", "How We Help", "Our Process", "Why Choose Us", "Pricing/Packages", or "Call to Action"
+- Create EDUCATIONAL content structure modeled after the top-ranking SERP results:
+  → Introduction/Definition — clearly answer "what is [topic]" upfront
+  → Core concept sections — break down the topic's key components (look at what H2s the top-ranking pages use)
+  → How-to / Implementation — practical steps, examples, best practices
+  → Types / Categories — if the topic has subtypes, cover them
+  → Common mistakes / Tips — practical advice
+  → FAQ — address People Also Ask questions
+  → Summary / Key Takeaways
+- H1 should be clear and educational (e.g., "What Is On-Page SEO? A Complete Guide" NOT "Mastering On-Page SEO: Services for SMBs")
+- Content should teach, explain, and inform — NOT sell services
+- Include examples, definitions, step-by-step instructions, diagrams/visuals suggestions
+- Write from an authoritative, educational perspective (like a textbook or trusted resource)
+
+**TRANSACTIONAL** (Service/Product Page — e.g., "buy X", "X services", "hire X"):
 - Create a SERVICE PAGE structure: Hero section → What we do → How we help → Our process → Why choose us → Case studies/results → Pricing/packages → FAQ → CTA
 - H1 should be benefit-focused, NOT "X Best..." (e.g., "AI Search Optimization Services" not "15 Best AI Search Agencies")
 - Include conversion elements: testimonials, trust badges, guarantees, clear CTAs
 - Focus on YOUR service, not comparing others
+- DO NOT create a listicle or "best of" list
 
-**COMMERCIAL** (Comparison/Research Content):
-- Create comparison content, "best of" lists, buying guides, reviews
-- Help users evaluate options and make decisions
+**COMMERCIAL** (Comparison/Research Content — e.g., "best X", "X vs Y", "X reviews"):
+- Create comparison/evaluation content structure:
+  → Introduction with evaluation criteria
+  → Individual reviews or comparisons
+  → Comparison table / feature matrix
+  → Pros and cons for each option
+  → Recommendation / verdict
+  → FAQ
+- Help users evaluate options and make purchase decisions
 - Include pros/cons, pricing comparisons, feature tables
 
-**INFORMATIONAL** (Educational Content):
-- Create how-to guides, explanations, definitions, tutorials
-- Focus on teaching and answering questions
-- Include examples, step-by-step instructions, visuals
-
-**NAVIGATIONAL** (Brand/Direct Answer):
+**NAVIGATIONAL** (Brand/Direct Answer — e.g., "X login", "X company"):
 - Direct answers, brand-focused content
 - Contact information, location, credentials
+
+## SERP-Driven Outline Construction
+
+IMPORTANT: Study the titles, snippets, and structure of the top 10 SERP results above. Your outline sections should:
+1. Cover the same core topics that top-ranking pages cover
+2. Address all People Also Ask questions
+3. Include related search topics where relevant
+4. Fill gaps that competitors miss
+5. Match the depth and format of what's currently ranking
 
 ## Your Task
 
@@ -284,9 +292,11 @@ Create a detailed content brief that addresses:
 
 4. **Content Outline**
    - H1 title (optimized for search AND click-through, matching the TARGET intent format)
-   - H2 sections with brief descriptions (USE SERVICE PAGE STRUCTURE for transactional: Hero, Services, Process, Results, Pricing, FAQ, CTA)
+   - H2 sections modeled after what the top SERP results actually cover
    - H3 subsections where appropriate
-   - Suggested content elements per section (for transactional: testimonials, case studies, CTAs, trust signals)
+   - For INFORMATIONAL: educational sections that teach the topic (definitions, components, how-to, examples, tips)
+   - For TRANSACTIONAL: service page sections (Hero, Services, Process, Results, Pricing, FAQ, CTA)
+   - For COMMERCIAL: comparison sections (criteria, reviews, pros/cons, comparison table, verdict)
 
 5. **Semantic Coverage**
    - Topics that MUST be covered (from competitor analysis)
